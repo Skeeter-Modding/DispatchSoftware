@@ -7,6 +7,9 @@
             <h1 class="h3 mb-0">
                 <i class="fas fa-inbox me-2 text-primary"></i>Order Management
             </h1>
+            <button class="btn btn-success me-2" onclick="runAIOptimization()">
+                <i class="fas fa-robot me-1"></i>AI Optimize
+            </button>
             <button class="btn btn-primary" onclick="showAddOrderModal()">
                 <i class="fas fa-plus me-1"></i>New Order
             </button>
@@ -62,7 +65,7 @@
                         </thead>
                         <tbody>
                             {% for order in orders %}
-                            <tr>
+                            <tr data-order-id="{{ order.id }}">
                                 <td><strong>{{ order.order_number }}</strong></td>
                                 <td>
                                     {{ order.customer_name or '-' }}
@@ -307,7 +310,19 @@
 {% block scripts %}
 <script>
 // Store assignments data for driver selection
-const assignmentsData = {{ active_assignments | default([]) | tojson | safe }};
+const assignmentsData = [
+    {% for a in active_assignments %}
+    {
+        "id": {{ a.id }},
+        "driver_id": {{ a.driver_id }},
+        "driver_name": "{{ a.driver_name }}",
+        "truck_id": {{ a.truck_id }},
+        "truck_number": "{{ a.truck_number }}",
+        "trailer_id": {{ a.trailer_id or 'null' }},
+        "trailer_number": "{{ a.trailer_number or '' }}"
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
 
 function showAddOrderModal() {
     const modal = new bootstrap.Modal(document.getElementById('addOrderModal'));
@@ -461,6 +476,169 @@ function deleteOrder(orderId) {
     .catch(error => {
         console.error('Error:', error);
         alert('Failed to delete order');
+    });
+}
+
+function runAIOptimization() {
+    // Get pending order IDs
+    const pendingOrders = [];
+    document.querySelectorAll('tr[data-order-id]').forEach(row => {
+        pendingOrders.push(row.dataset.orderId);
+    });
+
+    if (pendingOrders.length === 0) {
+        alert('No pending orders to optimize');
+        return;
+    }
+
+    // Show loading
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Optimizing...';
+    btn.disabled = true;
+
+    fetch('/api/ai/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_ids: pendingOrders })
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+
+        if (data.success && data.recommendations.length > 0) {
+            showAIRecommendations(data.recommendations);
+        } else {
+            alert('No recommendations available. Make sure you have driver assignments for today.');
+        }
+    })
+    .catch(error => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        console.error('Error:', error);
+        alert('Failed to run AI optimization');
+    });
+}
+
+function showAIRecommendations(recommendations) {
+    let html = '<div class="list-group">';
+    recommendations.forEach(rec => {
+        html += `
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>Order ${rec.order_number}</strong><br>
+                        <span class="text-muted">
+                            <i class="fas fa-user me-1"></i>${rec.driver_name} |
+                            <i class="fas fa-truck me-1"></i>${rec.truck_number} |
+                            <i class="fas fa-industry me-1"></i>${rec.plant_name}
+                        </span><br>
+                        <small class="text-muted">${rec.reasoning}</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-success mb-1">${rec.confidence}% confidence</span><br>
+                        <span class="badge bg-info">$${rec.estimated_cost} est. cost</span><br>
+                        <button class="btn btn-sm btn-primary mt-2" onclick="applyRecommendation(${rec.order_id}, ${rec.driver_id}, ${rec.truck_id}, ${rec.plant_id})">
+                            <i class="fas fa-check me-1"></i>Apply
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+
+    // Create and show modal
+    const modalHtml = `
+        <div class="modal fade" id="aiRecommendationsModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title"><i class="fas fa-robot me-2"></i>AI Recommendations</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">${html}</div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-success" onclick="applyAllRecommendations()">
+                            <i class="fas fa-check-double me-1"></i>Apply All
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Remove existing modal if any
+    const existing = document.getElementById('aiRecommendationsModal');
+    if (existing) existing.remove();
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const modal = new bootstrap.Modal(document.getElementById('aiRecommendationsModal'));
+    modal.show();
+
+    // Store recommendations for apply all
+    window.currentRecommendations = recommendations;
+}
+
+function applyRecommendation(orderId, driverId, truckId, plantId) {
+    fetch('/api/ai/apply-recommendation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            order_id: orderId,
+            driver_id: driverId,
+            truck_id: truckId,
+            plant_id: plantId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`Order assigned! Load #${data.load_number} created.`);
+            location.reload();
+        } else {
+            alert('Failed to apply recommendation: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to apply recommendation');
+    });
+}
+
+function applyAllRecommendations() {
+    if (!window.currentRecommendations || window.currentRecommendations.length === 0) {
+        alert('No recommendations to apply');
+        return;
+    }
+
+    if (!confirm(`Apply all ${window.currentRecommendations.length} recommendations?`)) {
+        return;
+    }
+
+    let applied = 0;
+    const promises = window.currentRecommendations.map(rec => {
+        return fetch('/api/ai/apply-recommendation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                order_id: rec.order_id,
+                driver_id: rec.driver_id,
+                truck_id: rec.truck_id,
+                plant_id: rec.plant_id
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) applied++;
+        });
+    });
+
+    Promise.all(promises).then(() => {
+        alert(`Applied ${applied} recommendations!`);
+        location.reload();
     });
 }
 
