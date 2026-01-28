@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3 mb-3">
+            <i class="fas fa-truck-pickup me-2 text-primary"></i>Trailer Management
+        </h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>All Trailers
+                </h5>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTrailerModal">
+                    <i class="fas fa-plus me-1"></i>Add Trailer
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Trailer #</th>
+                                <th>Plate</th>
+                                <th>Type</th>
+                                <th>Capacity (CY)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for trailer in trailers %}
+                            <tr>
+                                <td><strong>{{ trailer.trailer_number }}</strong></td>
+                                <td>{{ trailer.plate_number or '-' }}</td>
+                                <td>{{ trailer.type or '-' }}</td>
+                                <td>{{ trailer.capacity_tons or '-' }}</td>
+                                <td>
+                                    {% if trailer.status == 'active' %}
+                                    <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Trailer Modal -->
+<div class="modal fade" id="addTrailerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Add New Trailer</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('add_trailer') }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Trailer Number *</label>
+                        <input type="text" class="form-control" name="trailer_number" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Plate Number</label>
+                        <input type="text" class="form-control" name="plate_number">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" name="type">
+                            <option value="dump">Dump</option>
+                            <option value="flatbed">Flatbed</option>
+                            <option value="tanker">Tanker</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Capacity (Cubic Yards)</label>
+                        <input type="number" class="form-control" name="capacity_tons" step="0.5" min="1">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Trailer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

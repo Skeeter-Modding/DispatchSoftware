@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block title %}Pickup Locations - SRM Dispatch{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📦 Pickup Locations</h1>
+    <p>Martin Marietta Materials pickup locations</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <h3>Total Locations</h3>
+        <p class="stat-number">{{ pickup_locations|length }}</p>
+    </div>
+    <div class="stat-card">
+        <h3>Active</h3>
+        <p class="stat-number">{{ pickup_locations|selectattr('status', 'equalto', 'active')|list|length }}</p>
+    </div>
+    <div class="stat-card">
+        <h3>With Railway</h3>
+        <p class="stat-number">{{ pickup_locations|selectattr('railway_access')|list|length }}</p>
+    </div>
+    <div class="stat-card">
+        <h3>Savannah Area</h3>
+        <p class="stat-number">{{ pickup_locations|selectattr('city', 'equalto', 'Savannah')|list|length }}</p>
+    </div>
+</div>
+
+<div class="filters">
+    <div class="filter-group">
+        <label>City:</label>
+        <select id="cityFilter" onchange="filterPickups()">
+            <option value="all">All Cities</option>
+            <option value="Savannah">Savannah</option>
+            <option value="Statesboro">Statesboro</option>
+            <option value="Bloomingdale">Bloomingdale</option>
+            <option value="Midway">Midway</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Search:</label>
+        <input type="text" id="searchInput" placeholder="Search locations..." oninput="filterPickups()">
+    </div>
+</div>
+
+<div class="locations-grid">
+    {% for location in pickup_locations %}
+    <div class="location-card" data-city="{{ location.city }}" data-search="{{ location.name }} {{ location.address }} {{ location.zip }}">
+        <div class="location-header">
+            <h3>{{ location.name }}</h3>
+            <span class="badge badge-company">{{ location.company }}</span>
+        </div>
+        <div class="location-details">
+            <p><strong>📍 Address:</strong> {{ location.address }}</p>
+            <p><strong>🏙️ City:</strong> {{ location.city }}, {{ location.state }} {{ location.zip }}</p>
+            <p><strong>📞 Phone:</strong> {{ location.phone }}</p>
+            <p><strong>🕐 Hours:</strong> {{ location.hours }}</p>
+            <p><strong>👤 Sales Rep:</strong> {{ location.sales_rep }}</p>
+            <p><strong>🏢 District:</strong> {{ location.district_office }}</p>
+            <p><strong>🏭 Division:</strong> {{ location.division_office }}</p>
+            <p><strong>📦 Products:</strong> {{ location.products }}</p>
+            {% if location.railway_access %}
+            <p><strong>🚂 Railway Access:</strong> <span class="railway-badge">✅ Yes</span></p>
+            {% endif %}
+            <p><strong>🆔 Location ID:</strong> {{ location.location_id }}</p>
+        </div>
+        <div class="location-actions">
+            {% if location.status == 'active' %}
+            <button onclick="toggleStatus({{ location.id }}, 'inactive')" class="btn btn-warning">
+                ⏸️ Deactivate
+            </button>
+            {% else %}
+            <button onclick="toggleStatus({{ location.id }}, 'active')" class="btn btn-success">
+                ✅ Activate
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+function filterPickups() {
+    const cityFilter = document.getElementById('cityFilter').value;
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const locationCards = document.querySelectorAll('.location-card');
+
+    locationCards.forEach(card => {
+        const city = card.getAttribute('data-city');
+        const searchData = card.getAttribute('data-search').toLowerCase();
+
+        const cityMatch = cityFilter === 'all' || city === cityFilter;
+        const searchMatch = searchData.includes(searchTerm);
+
+        if (cityMatch && searchMatch) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+function toggleStatus(locationId, newStatus) {
+    if (confirm(`Are you sure you want to ${newStatus} this location?`)) {
+        fetch(`/api/pickup-locations/${locationId}/status`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ status: newStatus })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
+        });
+    }
+}
+</script>
+
+<style>
+.locations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.location-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+    border-left: 4px solid #007bff;
+}
+
+.location-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+
+.location-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.location-header h3 {
+    margin: 0;
+    color: #333;
+}
+
+.location-details p {
+    margin: 8px 0;
+    color: #555;
+    font-size: 14px;
+}
+
+.location-actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+.badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.badge-company {
+    background: #007bff;
+    color: white;
+}
+
+.railway-badge {
+    background: #28a745;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.filters {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin: 20px 0;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.filter-group label {
+    font-weight: bold;
+    color: #333;
+}
+
+.filter-group select,
+.filter-group input {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+.filter-group input {
+    width: 300px;
+}
+</style>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

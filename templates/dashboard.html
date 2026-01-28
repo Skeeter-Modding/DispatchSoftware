@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3 mb-3">
+            <i class="fas fa-tachometer-alt me-2 text-primary"></i>Dashboard
+            <span class="text-muted fs-6 ms-2">{{ today_date }}</span>
+        </h1>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card stats-card-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Active Drivers</h6>
+                        <h2 class="mb-0">{{ stats.active_drivers }}</h2>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-users fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card stats-card-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Active Trucks</h6>
+                        <h2 class="mb-0">{{ stats.active_trucks }}</h2>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-truck fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card stats-card-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Today's Loads</h6>
+                        <h2 class="mb-0">{{ stats.today_loads }}</h2>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-dolly fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card stats-card-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Pending</h6>
+                        <h2 class="mb-0">{{ stats.pending_loads }}</h2>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-clock fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Assignments & Recent Activity -->
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-link me-2 text-primary"></i>Today's Assignments
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if active_assignments %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Driver</th>
+                                    <th>Truck</th>
+                                    <th>Trailer</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for assignment in active_assignments %}
+                                <tr>
+                                    <td><strong>{{ assignment.driver_name }}</strong></td>
+                                    <td><span class="badge bg-secondary">{{ assignment.truck_number }}</span></td>
+                                    <td>
+                                        {% if assignment.trailer_number %}
+                                            <span class="badge bg-info">{{ assignment.trailer_number }}</span>
+                                        {% else %}
+                                            <span class="text-muted">None</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="badge bg-success">Active</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-users-slash fa-3x mb-3"></i>
+                        <p>No active assignments for today</p>
+                        <a href="{{ url_for('assignments') }}" class="btn btn-primary btn-sm">
+                            <i class="fas fa-plus me-1"></i>Create Assignment
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-2 text-primary"></i>Recent Loads
+                </h5>
+                <a href="{{ url_for('loads') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body">
+                {% if recent_loads %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Load #</th>
+                                    <th>Driver</th>
+                                    <th>Job</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for load in recent_loads %}
+                                <tr>
+                                    <td><strong>{{ load.load_number }}</strong></td>
+                                    <td>{{ load.driver_name }}</td>
+                                    <td>{{ load.job_name }}</td>
+                                    <td>
+                                        {% set status_classes = {
+                                            'assigned': 'bg-secondary',
+                                            'en_route': 'bg-primary',
+                                            'at_job': 'bg-info',
+                                            'delivering': 'bg-warning',
+                                            'complete': 'bg-success',
+                                            'cancelled': 'bg-danger'
+                                        } %}
+                                        <span class="badge {{ status_classes.get(load.status, 'bg-secondary') }}">
+                                            {{ load.status.replace('_', ' ').title() }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-clipboard fa-3x mb-3"></i>
+                        <p>No loads recorded today</p>
+                        <a href="{{ url_for('dispatch') }}" class="btn btn-primary btn-sm">
+                            <i class="fas fa-plus me-1"></i>Create Load
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt me-2 text-warning"></i>Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <a href="{{ url_for('dispatch') }}" class="btn btn-primary w-100 py-3">
+                            <i class="fas fa-clipboard-list fa-lg me-2"></i>
+                            <div>New Dispatch</div>
+                            <small>Create daily loads</small>
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <a href="{{ url_for('assignments') }}" class="btn btn-success w-100 py-3">
+                            <i class="fas fa-link fa-lg me-2"></i>
+                            <div>Assignments</div>
+                            <small>Link drivers to trucks</small>
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <a href="{{ url_for('loads') }}" class="btn btn-info w-100 py-3">
+                            <i class="fas fa-route fa-lg me-2"></i>
+                            <div>Track Loads</div>
+                            <small>Monitor all loads</small>
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <a href="{{ url_for('samara_integration') }}" class="btn btn-warning w-100 py-3">
+                            <i class="fas fa-satellite-dish fa-lg me-2"></i>
+                            <div>Auto Tracking</div>
+                            <small>Samara integration</small>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-refresh dashboard every 30 seconds
+    setTimeout(function() {
+        location.reload();
+    }, 30000);
+</script>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

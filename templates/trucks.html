@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3 mb-3">
+            <i class="fas fa-truck me-2 text-primary"></i>Truck Management
+        </h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>All Trucks
+                </h5>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTruckModal">
+                    <i class="fas fa-plus me-1"></i>Add Truck
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Truck #</th>
+                                <th>Plate</th>
+                                <th>Make/Model</th>
+                                <th>Year</th>
+                                <th>Capacity (Tons)</th>
+                                <th>Samara Device</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for truck in trucks %}
+                            <tr>
+                                <td><strong>{{ truck.truck_number }}</strong></td>
+                                <td>{{ truck.plate_number or '-' }}</td>
+                                <td>{{ truck.make or '' }} {{ truck.model or '' }}</td>
+                                <td>{{ truck.year or '-' }}</td>
+                                <td>{{ truck.capacity_tons or '-' }}</td>
+                                <td>
+                                    {% if truck.samara_device_id %}
+                                    <span class="badge bg-success"><i class="fas fa-satellite-dish me-1"></i>{{ truck.samara_device_id }}</span>
+                                    {% else %}
+                                    <span class="text-muted">Not linked</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if truck.status == 'active' %}
+                                    <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Truck Modal -->
+<div class="modal fade" id="addTruckModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Add New Truck</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('add_truck') }}">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Truck Number *</label>
+                                <input type="text" class="form-control" name="truck_number" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Plate Number</label>
+                                <input type="text" class="form-control" name="plate_number">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Make</label>
+                                <input type="text" class="form-control" name="make">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Model</label>
+                                <input type="text" class="form-control" name="model">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Year</label>
+                                <input type="number" class="form-control" name="year" min="1990" max="2025">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Capacity (Tons)</label>
+                                <input type="number" class="form-control" name="capacity_tons" step="0.5" min="1">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Samara Device ID</label>
+                                <input type="text" class="form-control" name="samara_device_id" placeholder="For auto-tracking">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Truck</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

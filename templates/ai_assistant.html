@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+
+{% block title %}AI Assistant - SRM Dispatch{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🤖 SRM AI Assistant</h1>
+    <p>Intelligent dispatch and tracking support</p>
+</div>
+
+<div class="ai-container">
+    <div class="ai-chat-container">
+        <div class="ai-header">
+            <div class="ai-status">
+                <span class="status-dot"></span>
+                <span>AI Assistant Online</span>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="clearChat()">
+                Clear Chat
+            </button>
+        </div>
+        
+        <div class="ai-messages" id="aiMessages">
+            <div class="message ai-message">
+                <div class="message-avatar">🤖</div>
+                <div class="message-content">
+                    <p>Hello! I'm your SRM Dispatch AI Assistant. I can help you with:</p>
+                    <ul>
+                        <li>🚛 Tracking loads and driver status</li>
+                        <li>📍 Finding plant and pickup location information</li>
+                        <li>📊 Generating dispatch reports</li>
+                        <li>🔍 Searching for drivers, trucks, and jobs</li>
+                        <li>⏰ Checking load schedules and times</li>
+                        <li>💡 Providing dispatch recommendations</li>
+                    </ul>
+                    <p>How can I assist you today?</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="ai-input-container">
+            <div class="quick-actions">
+                <button class="quick-btn" onclick="quickAction('status')">
+                    📊 Today's Status
+                </button>
+                <button class="quick-btn" onclick="quickAction('active_loads')">
+                    🚛 Active Loads
+                </button>
+                <button class="quick-btn" onclick="quickAction('driver_search')">
+                    👨‍✈️ Find Driver
+                </button>
+                <button class="quick-btn" onclick="quickAction('plant_info')">
+                    🏭 Plant Info
+                </button>
+            </div>
+            <div class="input-group">
+                <input type="text" class="form-control" id="aiInput" 
+                       placeholder="Ask me anything about dispatch, tracking, or operations..."
+                       onkeypress="handleKeyPress(event)">
+                <button class="btn btn-primary" onclick="sendMessage()">
+                    <i class="fas fa-paper-plane"></i> Send
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="ai-features">
+        <div class="feature-card">
+            <div class="feature-icon">🚛</div>
+            <h3>Load Tracking</h3>
+            <p>Real-time load status updates and tracking information</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📍</div>
+            <h3>Location Data</h3>
+            <p>Quick access to plant and pickup location details</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3>Analytics</h3>
+            <p>Dispatch statistics and performance metrics</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔔</div>
+            <h3>Alerts</h3>
+            <p>Proactive notifications for delays and issues</p>
+        </div>
+    </div>
+</div>
+
+<script>
+let chatHistory = [];
+
+function handleKeyPress(event) {
+    if (event.key === 'Enter') {
+        sendMessage();
+    }
+}
+
+function sendMessage() {
+    const input = document.getElementById('aiInput');
+    const message = input.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message
+    addMessage(message, 'user');
+    input.value = '';
+    
+    // Get AI response
+    getAIResponse(message);
+}
+
+function addMessage(text, sender) {
+    const messagesContainer = document.getElementById('aiMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${sender}-message`;
+    
+    const avatar = sender === 'user' ? '👤' : '🤖';
+    messageDiv.innerHTML = `
+        <div class="message-avatar">${avatar}</div>
+        <div class="message-content">${text}</div>
+    `;
+    
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    
+    chatHistory.push({ text, sender, timestamp: new Date() });
+}
+
+function getAIResponse(message) {
+    // Simulate AI processing
+    const lowerMessage = message.toLowerCase();
+    
+    let response = '';
+    
+    if (lowerMessage.includes('status') || lowerMessage.includes('today')) {
+        response = getTodayStatus();
+    } else if (lowerMessage.includes('active loads') || lowerMessage.includes('current loads')) {
+        response = getActiveLoads();
+    } else if (lowerMessage.includes('driver') && (lowerMessage.includes('find') || lowerMessage.includes('search'))) {
+        response = searchForDriver(message);
+    } else if (lowerMessage.includes('plant') || lowerMessage.includes('location')) {
+        response = getPlantInfo();
+    } else if (lowerMessage.includes('help')) {
+        response = getHelpText();
+    } else {
+        response = getGenericResponse();
+    }
+    
+    // Simulate typing delay
+    setTimeout(() => {
+        addMessage(response, 'ai');
+    }, 1000);
+}
+
+function quickAction(action) {
+    const actions = {
+        'status': "What's the status today?",
+        'active_loads': "How many active loads do we have?",
+        'driver_search': "Find a driver",
+        'plant_info': "Tell me about our plants"
+    };
+    
+    document.getElementById('aiInput').value = actions[action];
+    sendMessage();
+}
+
+function getTodayStatus() {
+    return `
+        <p><strong>📊 Today's Dispatch Status</strong></p>
+        <p>Here's an overview of today's operations:</p>
+        <ul>
+            <li>Total loads scheduled: Coming soon</li>
+            <li>Active drivers on route: Coming soon</li>
+            <li>Completed loads: Coming soon</li>
+            <li>Pending loads: Coming soon</li>
+        </ul>
+        <p>Would you like more detailed information on any of these?</p>
+    `;
+}
+
+function getActiveLoads() {
+    return `
+        <p><strong>🚛 Active Loads</strong></p>
+        <p>I'm checking the current active loads...</p>
+        <p>This feature is being developed. When complete, it will show you:</p>
+        <ul>
+            <li>Loads currently en route</li>
+            <li>Loads at job sites</li>
+            <li>Loads being delivered</li>
+            <li>Estimated completion times</li>
+        </ul>
+    `;
+}
+
+function searchForDriver(message) {
+    return `
+        <p><strong>👨‍✈️ Driver Search</strong></p>
+        <p>I can help you find a driver. Please specify:</p>
+        <ul>
+            <li>Driver name</li>
+            <li>Truck number</li>
+            <li>Or ask for all active drivers</li>
+        </ul>
+        <p>For example: "Find driver John Smith" or "Show me drivers on truck 23060"</p>
+    `;
+}
+
+function getPlantInfo() {
+    return `
+        <p><strong>🏭 Plant Information</strong></p>
+        <p>Here's a summary of your plants:</p>
+        <ul>
+            <li>Total plants: 23 (19 in Georgia, 4 in South Carolina)</li>
+            <li>All plants south of Macon, GA</li>
+            <li>Key locations: Savannah, Macon, Brunswick, Statesboro</li>
+        </ul>
+        <p>I can provide specific plant details if you mention a plant name or city.</p>
+    `;
+}
+
+function getHelpText() {
+    return `
+        <p><strong>💡 How I Can Help</strong></p>
+        <p>I'm designed to assist with dispatch operations:</p>
+        <ul>
+            <li>Ask about today's status or active loads</li>
+            <li>Search for drivers, trucks, or jobs</li>
+            <li>Get plant and pickup location information</li>
+            <li>Request dispatch reports</li>
+            <li>Get recommendations for dispatch decisions</li>
+        </ul>
+        <p>Just ask your question in natural language!</p>
+    `;
+}
+
+function getGenericResponse() {
+    return `
+        <p>I understand you're asking about dispatch operations. I can help you with:</p>
+        <ul>
+            <li>Load tracking and status</li>
+            <li>Driver and truck information</li>
+            <li>Plant and pickup location details</li>
+            <li>Dispatch scheduling</li>
+            <li>Generating reports</li>
+        </ul>
+        <p>Could you be more specific about what you need?</p>
+    `;
+}
+
+function clearChat() {
+    const messagesContainer = document.getElementById('aiMessages');
+    messagesContainer.innerHTML = `
+        <div class="message ai-message">
+            <div class="message-avatar">🤖</div>
+            <div class="message-content">
+                <p>Chat cleared. How can I help you with dispatch operations?</p>
+            </div>
+        </div>
+    `;
+    chatHistory = [];
+}
+</script>
+
+<style>
+.ai-container {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.ai-chat-container {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 600px;
+}
+
+.ai-header {
+    padding: 15px 20px;
+    border-bottom: 2px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ai-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    background: #28a745;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.ai-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.message {
+    display: flex;
+    gap: 10px;
+    max-width: 80%;
+}
+
+.message-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.ai-message {
+    align-self: flex-start;
+}
+
+.ai-message .message-avatar {
+    background: #007bff;
+}
+
+.user-message {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+}
+
+.user-message .message-avatar {
+    background: #6c757d;
+}
+
+.message-content {
+    background: #f8f9fa;
+    padding: 12px 16px;
+    border-radius: 10px;
+    line-height: 1.5;
+}
+
+.user-message .message-content {
+    background: #007bff;
+    color: white;
+}
+
+.ai-input-container {
+    border-top: 2px solid #e0e0e0;
+    padding: 15px 20px;
+}
+
+.quick-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.quick-btn {
+    padding: 6px 12px;
+    border: 1px solid #007bff;
+    background: white;
+    color: #007bff;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.quick-btn:hover {
+    background: #007bff;
+    color: white;
+}
+
+.input-group {
+    display: flex;
+    gap: 10px;
+}
+
+.input-group input {
+    flex: 1;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 25px;
+    font-size: 14px;
+}
+
+.input-group button {
+    padding: 10px 20px;
+    border-radius: 25px;
+}
+
+.ai-features {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.feature-card {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.feature-icon {
+    font-size: 40px;
+    margin-bottom: 10px;
+}
+
+.feature-card h3 {
+    margin: 10px 0;
+    font-size: 16px;
+    color: #333;
+}
+
+.feature-card p {
+    margin: 0;
+    font-size: 13px;
+    color: #666;
+}
+
+@media (max-width: 768px) {
+    .ai-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .ai-chat-container {
+        height: 500px;
+    }
+}
+</style>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

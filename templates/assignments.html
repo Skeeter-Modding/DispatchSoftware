@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3 mb-3">
+            <i class="fas fa-link me-2 text-primary"></i>Driver Assignments
+        </h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Current Assignments
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if assignments %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Driver</th>
+                                <th>Truck</th>
+                                <th>Trailer</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for assignment in assignments %}
+                            <tr>
+                                <td><strong>{{ assignment.driver_name }}</strong></td>
+                                <td><span class="badge bg-secondary">{{ assignment.truck_number }}</span></td>
+                                <td>
+                                    {% if assignment.trailer_number %}
+                                    <span class="badge bg-info">{{ assignment.trailer_number }}</span>
+                                    {% else %}
+                                    <span class="text-muted">None</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ assignment.assigned_date }}</td>
+                                <td>
+                                    {% if assignment.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-users-slash fa-3x mb-3"></i>
+                    <p>No assignments found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-plus me-2"></i>New Assignment
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('add_assignment') }}">
+                    <div class="mb-3">
+                        <label class="form-label">Driver *</label>
+                        <select class="form-select" name="driver_id" required>
+                            <option value="">Select Driver</option>
+                            {% for driver in drivers %}
+                            <option value="{{ driver.id }}">{{ driver.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Truck *</label>
+                        <select class="form-select" name="truck_id" required>
+                            <option value="">Select Truck</option>
+                            {% for truck in trucks %}
+                            <option value="{{ truck.id }}">{{ truck.truck_number }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Trailer</label>
+                        <select class="form-select" name="trailer_id">
+                            <option value="">No Trailer</option>
+                            {% for trailer in trailers %}
+                            <option value="{{ trailer.id }}">{{ trailer.trailer_number }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Creating a new assignment will deactivate previous assignments for the selected driver.
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-plus me-1"></i>Create Assignment
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

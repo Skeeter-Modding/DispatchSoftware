@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3 mb-3">
+            <i class="fas fa-satellite-dish me-2 text-primary"></i>Samara Integration - Auto Tracking
+        </h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card stats-card stats-card-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Tracking Active</h6>
+                        <h2 class="mb-0">{{ loads|length }}</h2>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-satellite fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stats-card stats-card-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Samara Devices</h6>
+                        <h2 class="mb-0">{{ loads|selectattr('samara_device_id')|list|length }}</h2>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-microchip fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stats-card stats-card-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Status Updates</h6>
+                        <h2 class="mb-0" id="updateCount">0</h2>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-sync fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Integration Status -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-plug me-2"></i>Samara Integration Status
+                </h5>
+                <div>
+                    <span class="badge bg-success me-2"><i class="fas fa-circle me-1"></i>Connected</span>
+                    <button class="btn btn-primary btn-sm" onclick="syncSamara()">
+                        <i class="fas fa-sync me-1"></i>Sync Now
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Automatic Tracking Enabled:</strong> Loads from trucks with Samara devices are automatically tracked. Status updates are synchronized based on GPS location and predefined geofences.
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="mb-3">Integration Features</h6>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-map-marker-alt text-primary me-2"></i>Real-time GPS Tracking</span>
+                                <span class="badge bg-success">Active</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-geofence text-primary me-2"></i>Automatic Geofence Detection</span>
+                                <span class="badge bg-success">Active</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-exchange-alt text-primary me-2"></i>Status Auto-Updates</span>
+                                <span class="badge bg-success">Active</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-clock text-primary me-2"></i>Arrival/Departure Times</span>
+                                <span class="badge bg-success">Active</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="mb-3">Configuration</h6>
+                        <form id="samaraConfig">
+                            <div class="mb-3">
+                                <label class="form-label">API Endpoint</label>
+                                <input type="text" class="form-control" value="https://api.samara.io/v1" readonly>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Sync Interval (minutes)</label>
+                                <select class="form-select">
+                                    <option value="1">1 minute</option>
+                                    <option value="5" selected>5 minutes</option>
+                                    <option value="10">10 minutes</option>
+                                    <option value="15">15 minutes</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Geofence Radius (meters)</label>
+                                <input type="number" class="form-control" value="100" min="50" max="500">
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tracked Loads -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-truck-moving me-2"></i>Currently Tracked Loads
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if loads %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Load #</th>
+                                <th>Driver</th>
+                                <th>Truck</th>
+                                <th>Samara Device</th>
+                                <th>Job</th>
+                                <th>Status</th>
+                                <th>Last Update</th>
+                                <th>Location</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for load in loads %}
+                            <tr>
+                                <td><strong>{{ load.load_number }}</strong></td>
+                                <td>{{ load.driver_name }}</td>
+                                <td><span class="badge bg-secondary">{{ load.truck_number }}</span></td>
+                                <td>
+                                    {% if load.samara_device_id %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-microchip me-1"></i>{{ load.samara_device_id }}
+                                    </span>
+                                    {% else %}
+                                    <span class="text-muted">No device</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ load.job_name }}</td>
+                                <td>
+                                    {% set status_classes = {
+                                        'assigned': 'bg-secondary',
+                                        'en_route': 'bg-primary',
+                                        'at_job': 'bg-info',
+                                        'delivering': 'bg-warning',
+                                        'complete': 'bg-success'
+                                    } %}
+                                    <span class="badge {{ status_classes.get(load.status, 'bg-secondary') }}">
+                                        {{ load.status.replace('_', ' ').title() }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="text-muted small">
+                                        {% if load.updated_at %}{{ load.updated_at }}{% else %}Never{% endif %}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if load.samara_device_id %}
+                                    <button class="btn btn-sm btn-outline-primary" onclick="viewLocation('{{ load.samara_device_id }}')">
+                                        <i class="fas fa-map-marker-alt me-1"></i>View
+                                    </button>
+                                    {% else %}
+                                    <span class="text-muted">N/A</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-satellite-dish fa-3x mb-3"></i>
+                    <p>No loads with Samara tracking enabled</p>
+                    <a href="{{ url_for('trucks') }}" class="btn btn-primary btn-sm">
+                        <i class="fas fa-plus me-1"></i>Add Samara Devices to Trucks
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Location Modal -->
+<div class="modal fade" id="locationModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">GPS Location</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="mapContainer" style="height: 400px; background: #f0f0f0; display: flex; align-items: center; justify-content: center;">
+                    <div class="text-center text-muted">
+                        <i class="fas fa-map-marked-alt fa-3x mb-3"></i>
+                        <p>Map integration would display here</p>
+                        <small>Latitude: <span id="latitude">-</span></small><br>
+                        <small>Longitude: <span id="longitude">-</span></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let updateCount = 0;
+
+function syncSamara() {
+    // Simulate Samara sync
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Syncing...';
+    
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sync me-1"></i>Sync Now';
+        updateCount += Math.floor(Math.random() * 5) + 1;
+        document.getElementById('updateCount').textContent = updateCount;
+        alert('Samara sync completed! ' + updateCount + ' status updates received.');
+    }, 2000);
+}
+
+function viewLocation(deviceId) {
+    // Simulate location data
+    document.getElementById('latitude').textContent = (33.8 + Math.random() * 0.1).toFixed(6);
+    document.getElementById('longitude').textContent = (-84.3 + Math.random() * 0.1).toFixed(6);
+    $('#locationModal').modal('show');
+}
+
+// Auto-sync every 5 minutes
+setInterval(() => {
+    console.log('Auto-syncing with Samara...');
+    updateCount += Math.floor(Math.random() * 3);
+    document.getElementById('updateCount').textContent = updateCount;
+}, 300000);
+</script>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>

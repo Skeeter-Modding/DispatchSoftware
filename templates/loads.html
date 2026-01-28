@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3 mb-3">
+            <i class="fas fa-route me-2 text-primary"></i>Load Tracking
+        </h1>
+    </div>
+</div>
+
+<!-- Status Filter -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-primary active" onclick="filterLoads('all')">All</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="filterLoads('assigned')">Assigned</button>
+                    <button type="button" class="btn btn-outline-primary" onclick="filterLoads('en_route')">En Route</button>
+                    <button type="button" class="btn btn-outline-info" onclick="filterLoads('at_job')">At Job</button>
+                    <button type="button" class="btn btn-outline-warning" onclick="filterLoads('delivering')">Delivering</button>
+                    <button type="button" class="btn btn-outline-success" onclick="filterLoads('complete')">Complete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>All Loads
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if loads %}
+                <div class="table-responsive">
+                    <table class="table table-hover" id="loadsTable">
+                        <thead>
+                            <tr>
+                                <th>Load #</th>
+                                <th>Driver</th>
+                                <th>Truck</th>
+                                <th>Job</th>
+                                <th>Product</th>
+                                <th>CY</th>
+                                <th>Time</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for load in loads %}
+                            <tr class="load-row" data-status="{{ load.status }}">
+                                <td><strong>{{ load.load_number }}</strong></td>
+                                <td>{{ load.driver_name }}</td>
+                                <td><span class="badge bg-secondary">{{ load.truck_number }}</span></td>
+                                <td>
+                                    <strong>{{ load.job_name }}</strong><br>
+                                    <small class="text-muted">{{ load.address }}</small>
+                                </td>
+                                <td>{{ load.product_type }}</td>
+                                <td>{{ load.quantity_tons }}</td>
+                                <td>{{ load.scheduled_time or '-' }}</td>
+                                <td>
+                                    {% set status_classes = {
+                                        'assigned': 'bg-secondary',
+                                        'en_route': 'bg-primary',
+                                        'at_job': 'bg-info',
+                                        'delivering': 'bg-warning',
+                                        'complete': 'bg-success',
+                                        'cancelled': 'bg-danger'
+                                    } %}
+                                    <span class="badge {{ status_classes.get(load.status, 'bg-secondary') }}">
+                                        {{ load.status.replace('_', ' ').title() }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                            Update
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'assigned')">Assigned</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'en_route')">En Route</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'at_job')">At Job</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'delivering')">Delivering</a></li>
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li><a class="dropdown-item text-success" href="#" onclick="updateLoadStatus({{ load.id }}, 'complete')">Complete</a></li>
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-clipboard fa-3x mb-3"></i>
+                    <p>No loads found</p>
+                    <a href="{{ url_for('dispatch') }}" class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i>Create Loads
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterLoads(status) {
+    $('.load-row').show();
+    if (status !== 'all') {
+        $(`.load-row:not([data-status="${status}"])`).hide();
+    }
+    
+    // Update button states
+    $('.btn-group .btn').removeClass('active');
+    $(event.target).addClass('active');
+}
+
+function updateLoadStatus(loadId, status) {
+    fetch(`/loads/${loadId}/status`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: status })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        }
+    });
+}
+</script>
+{% endblock %}
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
