@@ -129,29 +129,49 @@ function addMessage(text, sender) {
 }
 
 function getAIResponse(message) {
-    // Simulate AI processing
-    const lowerMessage = message.toLowerCase();
-    
-    let response = '';
-    
-    if (lowerMessage.includes('status') || lowerMessage.includes('today')) {
-        response = getTodayStatus();
-    } else if (lowerMessage.includes('active loads') || lowerMessage.includes('current loads')) {
-        response = getActiveLoads();
-    } else if (lowerMessage.includes('driver') && (lowerMessage.includes('find') || lowerMessage.includes('search'))) {
-        response = searchForDriver(message);
-    } else if (lowerMessage.includes('plant') || lowerMessage.includes('location')) {
-        response = getPlantInfo();
-    } else if (lowerMessage.includes('help')) {
-        response = getHelpText();
-    } else {
-        response = getGenericResponse();
-    }
-    
-    // Simulate typing delay
-    setTimeout(() => {
-        addMessage(response, 'ai');
-    }, 1000);
+    // Show typing indicator
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message ai-message typing-indicator';
+    typingDiv.id = 'typing';
+    typingDiv.innerHTML = `
+        <div class="message-avatar">🤖</div>
+        <div class="message-content"><em>Thinking...</em></div>
+    `;
+    document.getElementById('aiMessages').appendChild(typingDiv);
+
+    // Call real AI API
+    fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: message })
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Remove typing indicator
+        const typing = document.getElementById('typing');
+        if (typing) typing.remove();
+
+        if (data.success) {
+            // Convert markdown-style formatting to HTML
+            let formatted = data.response
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/^- (.*)/gm, '<li>$1</li>')
+                .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+            formatted = '<p>' + formatted + '</p>';
+            addMessage(formatted, 'ai');
+        } else {
+            addMessage('<p>Sorry, I encountered an error: ' + data.response + '</p>', 'ai');
+        }
+    })
+    .catch(error => {
+        const typing = document.getElementById('typing');
+        if (typing) typing.remove();
+        console.error('Error:', error);
+        addMessage('<p>Sorry, I had trouble connecting to the AI service. Please try again.</p>', 'ai');
+    });
 }
 
 function quickAction(action) {

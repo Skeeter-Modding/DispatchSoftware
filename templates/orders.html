@@ -509,8 +509,10 @@ function runAIOptimization() {
         btn.innerHTML = originalText;
         btn.disabled = false;
 
-        if (data.success && data.recommendations.length > 0) {
+        if (data.success && data.recommendations && data.recommendations.length > 0) {
             showAIRecommendations(data.recommendations);
+        } else if (data.error) {
+            alert('AI Optimization Error: ' + data.message);
         } else {
             alert('No recommendations available. Make sure you have driver assignments for today.');
         }
@@ -519,7 +521,7 @@ function runAIOptimization() {
         btn.innerHTML = originalText;
         btn.disabled = false;
         console.error('Error:', error);
-        alert('Failed to run AI optimization');
+        alert('Failed to run AI optimization: ' + error.message);
     });
 }
 
