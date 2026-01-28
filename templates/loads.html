@@ -138,9 +138,14 @@ function updateLoadStatus(loadId, status) {
     .then(data => {
         if (data.success) {
             location.reload();
+        } else {
+            alert('Failed to update status');
         }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to update status');
     });
 }
 </script>
 {% endblock %}
-<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
