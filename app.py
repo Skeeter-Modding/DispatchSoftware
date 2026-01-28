@@ -1007,7 +1007,7 @@ def ai_assistant():
 
 # Simple in-memory rate limiter for AI chat
 _ai_rate_limits = {}
-AI_RATE_LIMIT = 20  # requests per minute per IP
+AI_RATE_LIMIT = 100  # requests per minute per IP
 AI_RATE_WINDOW = 60  # seconds
 
 def check_rate_limit(ip):
