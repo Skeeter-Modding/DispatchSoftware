@@ -2,13 +2,24 @@
 Smyrna Ready Mix Dispatch System
 Main Flask application with database integration
 Updated for tons measurement and historical load tracking
+Enhanced with AI-powered smart dispatch optimization
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 import sqlite3
 import datetime
+import json
 from functools import wraps
 import os
+
+# Import AI Knowledge Engine
+from ai_knowledge import (
+    AIDispatchEngine, TruckType, MaterialKnowledge,
+    ProductivityCalculator, RouteKnowledge, OperatingConstraints
+)
+
+# Initialize global AI engine
+ai_engine = AIDispatchEngine()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'srm-dispatch-secret-key-2024'
@@ -1103,8 +1114,13 @@ def estimate_delivery_costs(distance_miles, quantity_tons, costs):
 
 @app.route('/api/ai/optimize', methods=['POST'])
 def ai_optimize_dispatch():
-    """AI optimization endpoint - recommends best driver/plant for orders"""
-    data = request.get_json()
+    """
+    Enhanced AI optimization endpoint - uses smart scoring engine
+    Considers: productivity, cost efficiency, truck suitability,
+    deadhead distance, workload balance, and constraints
+    """
+    global ai_engine
+    data = request.get_json() or {}
     order_ids = data.get('order_ids', [])
 
     if not order_ids:
@@ -1112,82 +1128,149 @@ def ai_optimize_dispatch():
         pending = query_db('SELECT id FROM orders WHERE status = "pending"')
         order_ids = [o['id'] for o in pending]
 
-    costs = get_cost_factors()
-    recommendations = []
+    if not order_ids:
+        return jsonify({
+            'success': True,
+            'recommendations': [],
+            'count': 0,
+            'message': 'No pending orders to optimize'
+        })
 
-    # Get today's available drivers (those with assignments)
+    recommendations = []
     today = datetime.date.today()
+
+    # Get today's available drivers with their current load counts
+    # Include driver home location for deadhead calculations
     available_drivers = query_db('''
-        SELECT a.*, d.name as driver_name, t.truck_number, t.capacity_tons
+        SELECT a.*, d.name as driver_name, d.home_city as driver_home_city,
+               d.home_location as driver_home_location,
+               t.truck_number, t.id as truck_id,
+               t.capacity_tons, t.truck_type, t.truck_name, t.home_city as truck_home_city
         FROM assignments a
         JOIN drivers d ON a.driver_id = d.id
         JOIN trucks t ON a.truck_id = t.id
         WHERE a.is_active = 1 AND a.assigned_date = ?
     ''', (today,))
 
-    # Get plants with coordinates (we'll use city-based estimates)
+    if not available_drivers:
+        return jsonify({
+            'success': True,
+            'recommendations': [],
+            'count': 0,
+            'message': 'No available drivers with assignments today'
+        })
+
+    # Build driver load counts for workload balancing
+    driver_loads = {}
+    for driver in available_drivers:
+        load_count = query_db('''
+            SELECT COUNT(*) as count FROM loads_active
+            WHERE driver_id = ? AND DATE(assigned_at) = ?
+        ''', (driver['driver_id'], today), one=True)['count']
+        driver_loads[str(driver['driver_id'])] = load_count
+
+    # Get pickup locations and plants
+    pickup_locations = query_db('SELECT * FROM pickup_locations WHERE status = "active"')
     plants = query_db('SELECT * FROM plants WHERE status = "active"')
 
     for order_id in order_ids:
-        order = query_db('SELECT o.*, j.city as job_city, j.state as job_state FROM orders o LEFT JOIN jobs j ON o.job_id = j.id WHERE o.id = ?', (order_id,), one=True)
+        order = query_db('''
+            SELECT o.*, j.city as job_city, j.state as job_state, j.job_name,
+                   m.code as material_code, m.name as material_name,
+                   pl.name as pickup_name, pl.city as pickup_city,
+                   p.name as plant_name, p.city as plant_city
+            FROM orders o
+            LEFT JOIN jobs j ON o.job_id = j.id
+            LEFT JOIN material_types m ON o.material_id = m.id
+            LEFT JOIN pickup_locations pl ON o.pickup_location_id = pl.id
+            LEFT JOIN plants p ON o.plant_id = p.id
+            WHERE o.id = ?
+        ''', (order_id,), one=True)
 
         if not order:
             continue
 
-        best_recommendation = None
-        best_score = -1
+        # Determine pickup and destination
+        pickup = order['pickup_city'] or order['pickup_name'] or 'unknown'
+        destination = order['plant_city'] or order['job_city'] or 'unknown'
+        material = order['material_code'] or '57'
+        quantity = order['quantity_tons'] or 20.0
 
+        # Score all available trucks/drivers
+        truck_scores = []
         for driver in available_drivers:
-            # Count driver's current loads for today
-            current_loads = query_db('''
-                SELECT COUNT(*) as count FROM loads_active
-                WHERE driver_id = ? AND DATE(assigned_at) = ?
-            ''', (driver['driver_id'], today), one=True)['count']
-
-            # Prefer drivers with fewer loads (capacity-based)
-            load_score = max(0, 10 - current_loads) / 10  # 0-1 score
-
-            for plant in plants:
-                # Estimate distance based on cities (simplified)
-                # In production, you'd use actual coordinates or a mapping API
-                base_distance = 25  # Default estimate in miles
-
-                # Adjust based on same state
-                if order['job_state'] and plant['state'] == order['job_state']:
-                    base_distance *= 0.7  # Closer if same state
-
-                # Calculate costs
-                cost_estimate = estimate_delivery_costs(
-                    base_distance,
-                    order['quantity_tons'] or 20,
-                    costs
+            try:
+                score = ai_engine.score_assignment(
+                    truck_id=str(driver['truck_id']),
+                    driver_id=str(driver['driver_id']),
+                    pickup=pickup,
+                    destination=destination,
+                    material=material,
+                    quantity=quantity,
+                    current_loads=driver_loads.get(str(driver['driver_id']), 0),
+                    all_loads=driver_loads
                 )
 
-                # Calculate score (lower cost = higher score)
-                cost_score = max(0, 1 - (cost_estimate['total_cost'] / 500))  # Normalize
+                truck_scores.append({
+                    'driver_id': driver['driver_id'],
+                    'driver_name': driver['driver_name'],
+                    'truck_id': driver['truck_id'],
+                    'truck_number': driver['truck_number'],
+                    'truck_name': driver['truck_name'] or driver['truck_number'],
+                    **score
+                })
+            except Exception as e:
+                # Fallback if scoring fails
+                truck_scores.append({
+                    'driver_id': driver['driver_id'],
+                    'driver_name': driver['driver_name'],
+                    'truck_id': driver['truck_id'],
+                    'truck_number': driver['truck_number'],
+                    'total_score': 50.0,
+                    'confidence': 50.0,
+                    'reasoning': [f'Fallback score: {str(e)[:50]}'],
+                    'productivity': {'tons_per_day': 0, 'loads_per_day': 0}
+                })
 
-                # Combined score
-                total_score = (load_score * 0.4) + (cost_score * 0.6)
+        # Sort by score and get best recommendation
+        truck_scores.sort(key=lambda x: x.get('total_score', 0), reverse=True)
 
-                if total_score > best_score:
-                    best_score = total_score
-                    best_recommendation = {
-                        'order_id': order_id,
-                        'order_number': order['order_number'],
-                        'driver_id': driver['driver_id'],
-                        'driver_name': driver['driver_name'],
-                        'truck_id': driver['truck_id'],
-                        'truck_number': driver['truck_number'],
-                        'plant_id': plant['id'],
-                        'plant_name': plant['name'],
-                        'estimated_distance': cost_estimate['distance_miles'],
-                        'estimated_cost': cost_estimate['total_cost'],
-                        'estimated_hours': cost_estimate['estimated_hours'],
-                        'confidence': round(total_score * 100, 1),
-                        'reasoning': f"Driver has {current_loads} loads today. Est. {cost_estimate['distance_miles']} miles, ${cost_estimate['total_cost']} cost."
-                    }
+        if truck_scores:
+            best = truck_scores[0]
+            productivity = best.get('productivity', {})
 
-        if best_recommendation:
+            # Build detailed reasoning
+            reasoning_parts = best.get('reasoning', [])
+            if productivity:
+                reasoning_parts.insert(0, f"Est. {productivity.get('tons_per_day', 0):.0f} tons/day, {productivity.get('loads_per_day', 0)} loads")
+
+            best_recommendation = {
+                'order_id': order_id,
+                'order_number': order['order_number'],
+                'job_name': order['job_name'],
+                'material': order['material_name'] or material,
+                'driver_id': best['driver_id'],
+                'driver_name': best['driver_name'],
+                'truck_id': best['truck_id'],
+                'truck_number': best['truck_number'],
+                'truck_name': best.get('truck_name'),
+                'plant_id': order.get('plant_id'),
+                'plant_name': order.get('plant_name'),
+                'pickup_location': pickup,
+                'destination': destination,
+                'estimated_tons_per_day': productivity.get('tons_per_day', 0),
+                'estimated_loads_per_day': productivity.get('loads_per_day', 0),
+                'cycle_time_minutes': productivity.get('cycle_time_minutes', 0),
+                'confidence': best.get('confidence', 50),
+                'quality': best.get('recommendation_quality', 'unknown'),
+                'scores': best.get('scores', {}),
+                'reasoning': ' | '.join(reasoning_parts[:4]),
+                'alternatives': [
+                    {'driver_name': alt['driver_name'], 'score': alt.get('total_score', 0)}
+                    for alt in truck_scores[1:4]
+                ]
+            }
+
             recommendations.append(best_recommendation)
 
             # Save recommendation to database
@@ -1202,11 +1285,11 @@ def ai_optimize_dispatch():
                 order_id,
                 best_recommendation['driver_id'],
                 best_recommendation['truck_id'],
-                best_recommendation['plant_id'],
-                best_recommendation['estimated_distance'],
-                best_recommendation['estimated_hours'] * 60,
-                best_recommendation['estimated_cost'] * 0.3,  # ~30% is fuel
-                0,  # Profit calculation would need material pricing
+                best_recommendation.get('plant_id'),
+                productivity.get('distance_miles', 0),
+                productivity.get('cycle_time_minutes', 0),
+                0,  # Fuel cost calculated separately
+                0,  # Profit needs pricing data
                 best_recommendation['confidence'],
                 best_recommendation['reasoning']
             ), commit=True)
@@ -1214,7 +1297,8 @@ def ai_optimize_dispatch():
     return jsonify({
         'success': True,
         'recommendations': recommendations,
-        'count': len(recommendations)
+        'count': len(recommendations),
+        'message': f'Generated {len(recommendations)} smart recommendations'
     })
 
 @app.route('/api/ai/apply-recommendation', methods=['POST'])
@@ -1283,6 +1367,501 @@ def get_ai_recommendations():
     })
 
 # ============ PLANT MATERIALS ============
+
+# ============ AI TRUCK KNOWLEDGE MANAGEMENT ============
+
+@app.route('/api/ai/truck-knowledge')
+def get_truck_knowledge():
+    """Get all trucks with their AI knowledge data"""
+    trucks = query_db('''
+        SELECT id, truck_number, truck_name, truck_type, capacity_tons,
+               home_location, home_city, specialty_materials, avoid_materials,
+               fuel_efficiency_mpg, avg_speed_loaded_mph, notes, status
+        FROM trucks
+        ORDER BY truck_number
+    ''')
+
+    result = []
+    for truck in trucks:
+        result.append({
+            'id': truck['id'],
+            'truck_number': truck['truck_number'],
+            'truck_name': truck['truck_name'],
+            'truck_type': truck['truck_type'] or 'end_dump',
+            'truck_type_display': TruckType.get_characteristics(truck['truck_type'] or 'end_dump').get('name', 'End Dump'),
+            'capacity_tons': truck['capacity_tons'],
+            'home_location': truck['home_location'],
+            'home_city': truck['home_city'],
+            'specialty_materials': json.loads(truck['specialty_materials']) if truck['specialty_materials'] else [],
+            'avoid_materials': json.loads(truck['avoid_materials']) if truck['avoid_materials'] else [],
+            'fuel_efficiency_mpg': truck['fuel_efficiency_mpg'],
+            'notes': truck['notes'],
+            'status': truck['status']
+        })
+
+    return jsonify({'success': True, 'trucks': result})
+
+@app.route('/api/ai/truck-knowledge/<int:truck_id>', methods=['GET', 'PUT'])
+def truck_knowledge_detail(truck_id):
+    """Get or update truck AI knowledge"""
+    global ai_engine
+
+    if request.method == 'GET':
+        truck = query_db('SELECT * FROM trucks WHERE id = ?', (truck_id,), one=True)
+        if not truck:
+            return jsonify({'success': False, 'error': 'Truck not found'}), 404
+
+        return jsonify({
+            'success': True,
+            'truck': {
+                'id': truck['id'],
+                'truck_number': truck['truck_number'],
+                'truck_name': truck['truck_name'],
+                'truck_type': truck['truck_type'],
+                'capacity_tons': truck['capacity_tons'],
+                'home_location': truck['home_location'],
+                'home_city': truck['home_city'],
+                'home_lat': truck['home_lat'],
+                'home_lon': truck['home_lon'],
+                'specialty_materials': json.loads(truck['specialty_materials']) if truck['specialty_materials'] else [],
+                'avoid_materials': json.loads(truck['avoid_materials']) if truck['avoid_materials'] else [],
+                'fuel_efficiency_mpg': truck['fuel_efficiency_mpg'],
+                'avg_speed_loaded_mph': truck['avg_speed_loaded_mph'],
+                'avg_speed_empty_mph': truck['avg_speed_empty_mph'],
+                'load_time_minutes': truck['load_time_minutes'],
+                'unload_time_minutes': truck['unload_time_minutes'],
+                'notes': truck['notes']
+            }
+        })
+
+    # PUT - Update truck knowledge
+    data = request.get_json()
+
+    # Build update query
+    updates = []
+    params = []
+
+    field_mapping = {
+        'truck_name': 'truck_name',
+        'truck_type': 'truck_type',
+        'capacity_tons': 'capacity_tons',
+        'home_location': 'home_location',
+        'home_city': 'home_city',
+        'home_lat': 'home_lat',
+        'home_lon': 'home_lon',
+        'fuel_efficiency_mpg': 'fuel_efficiency_mpg',
+        'avg_speed_loaded_mph': 'avg_speed_loaded_mph',
+        'avg_speed_empty_mph': 'avg_speed_empty_mph',
+        'load_time_minutes': 'load_time_minutes',
+        'unload_time_minutes': 'unload_time_minutes',
+        'notes': 'notes'
+    }
+
+    for key, col in field_mapping.items():
+        if key in data:
+            updates.append(f'{col} = ?')
+            params.append(data[key])
+
+    # Handle JSON fields
+    if 'specialty_materials' in data:
+        updates.append('specialty_materials = ?')
+        params.append(json.dumps(data['specialty_materials']))
+
+    if 'avoid_materials' in data:
+        updates.append('avoid_materials = ?')
+        params.append(json.dumps(data['avoid_materials']))
+
+    if updates:
+        updates.append('updated_at = CURRENT_TIMESTAMP')
+        params.append(truck_id)
+        query_db(f'''
+            UPDATE trucks SET {', '.join(updates)}
+            WHERE id = ?
+        ''', params, commit=True)
+
+        # Update AI engine knowledge
+        truck = query_db('SELECT * FROM trucks WHERE id = ?', (truck_id,), one=True)
+        if truck:
+            specialty = json.loads(truck['specialty_materials']) if truck['specialty_materials'] else []
+            avoid = json.loads(truck['avoid_materials']) if truck['avoid_materials'] else []
+
+            ai_engine.register_truck(
+                truck_id=str(truck['id']),
+                truck_name=truck['truck_name'] or truck['truck_number'],
+                truck_type=truck['truck_type'] or TruckType.END_DUMP,
+                capacity_tons=truck['capacity_tons'] or 22.0,
+                home_location=truck['home_location'],
+                home_city=truck['home_city'],
+                home_lat=truck['home_lat'],
+                home_lon=truck['home_lon'],
+                specialty_materials=specialty,
+                avoid_materials=avoid,
+                notes=truck['notes']
+            )
+
+    return jsonify({'success': True, 'message': 'Truck knowledge updated'})
+
+@app.route('/api/ai/truck-types')
+def get_truck_types():
+    """Get available truck types and their characteristics"""
+    types = []
+    for type_code, chars in TruckType.CHARACTERISTICS.items():
+        types.append({
+            'code': type_code,
+            'name': chars['name'],
+            'typical_capacity_tons': chars['typical_capacity_tons'],
+            'min_capacity': chars['min_capacity'],
+            'max_capacity': chars['max_capacity'],
+            'best_for': chars['best_for'],
+            'notes': chars['notes']
+        })
+    return jsonify({'success': True, 'types': types})
+
+# ============ AI PRODUCTIVITY ESTIMATION ============
+
+@app.route('/api/ai/estimate-productivity', methods=['POST'])
+def estimate_productivity():
+    """
+    Estimate productivity for a truck on a route.
+    This is the key endpoint for understanding how many tons
+    a truck can realistically haul in a day.
+    """
+    global ai_engine
+    data = request.get_json()
+
+    origin = data.get('origin', 'unknown')
+    destination = data.get('destination', 'unknown')
+    truck_type = data.get('truck_type', 'end_dump')
+    capacity_tons = data.get('capacity_tons')
+    material = data.get('material', '57')
+    work_hours = data.get('work_hours', 10.0)
+
+    try:
+        result = ai_engine.calculate_productivity(
+            origin=origin,
+            destination=destination,
+            truck_type=truck_type,
+            capacity_tons=capacity_tons,
+            material=material
+        )
+
+        return jsonify({
+            'success': True,
+            'productivity': result,
+            'summary': f"{result['loads_per_day']} loads, {result['tons_per_day']:.0f} tons/day, {result['cycle_time_minutes']:.0f} min cycle"
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/ai/route-comparison', methods=['POST'])
+def route_comparison():
+    """
+    Compare productivity across multiple routes for planning.
+    Useful for deciding which truck should run which route.
+    """
+    global ai_engine
+    data = request.get_json()
+
+    routes = data.get('routes', [])
+    truck_type = data.get('truck_type', 'end_dump')
+    capacity_tons = data.get('capacity_tons')
+    material = data.get('material', '57')
+
+    results = []
+    for route in routes:
+        try:
+            prod = ai_engine.calculate_productivity(
+                origin=route.get('origin', 'unknown'),
+                destination=route.get('destination', 'unknown'),
+                truck_type=truck_type,
+                capacity_tons=capacity_tons,
+                material=material
+            )
+            results.append({
+                'route': f"{route.get('origin')} → {route.get('destination')}",
+                'origin': route.get('origin'),
+                'destination': route.get('destination'),
+                'tons_per_day': prod['tons_per_day'],
+                'loads_per_day': prod['loads_per_day'],
+                'cycle_time_minutes': prod['cycle_time_minutes'],
+                'distance_miles': prod['distance_miles'],
+                'efficient': prod['is_efficient']
+            })
+        except Exception as e:
+            results.append({
+                'route': f"{route.get('origin')} → {route.get('destination')}",
+                'error': str(e)
+            })
+
+    # Sort by tons per day descending
+    results.sort(key=lambda x: x.get('tons_per_day', 0), reverse=True)
+
+    return jsonify({
+        'success': True,
+        'comparisons': results,
+        'best_route': results[0] if results else None
+    })
+
+# ============ AI ROUTE MANAGEMENT ============
+
+@app.route('/api/ai/routes')
+def get_routes():
+    """Get all known routes"""
+    routes = query_db('SELECT * FROM route_distances ORDER BY origin_name, destination_name')
+    return jsonify({
+        'success': True,
+        'routes': [dict(r) for r in routes]
+    })
+
+@app.route('/api/ai/routes/add', methods=['POST'])
+def add_route():
+    """Add a known route distance"""
+    global ai_engine
+    data = request.get_json()
+
+    origin = data.get('origin_name')
+    destination = data.get('destination_name')
+    distance = data.get('distance_miles')
+    drive_time = data.get('typical_drive_time_minutes')
+    road_type = data.get('road_type', 'highway')
+    notes = data.get('notes', '')
+
+    if not all([origin, destination, distance]):
+        return jsonify({'success': False, 'error': 'origin_name, destination_name, and distance_miles required'}), 400
+
+    try:
+        query_db('''
+            INSERT OR REPLACE INTO route_distances
+            (origin_name, destination_name, distance_miles, typical_drive_time_minutes, road_type, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (origin, destination, distance, drive_time, road_type, notes), commit=True)
+
+        # Update AI engine
+        ai_engine.add_route(origin, destination, distance)
+
+        return jsonify({'success': True, 'message': f'Route {origin} → {destination} added ({distance} miles)'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+# ============ AI SETTINGS ============
+
+@app.route('/api/ai/settings')
+def get_ai_settings():
+    """Get AI dispatch settings"""
+    settings = query_db('SELECT * FROM ai_dispatch_settings ORDER BY setting_name')
+    return jsonify({
+        'success': True,
+        'settings': [dict(s) for s in settings]
+    })
+
+@app.route('/api/ai/settings/update', methods=['POST'])
+def update_ai_settings():
+    """Update AI dispatch settings"""
+    data = request.get_json()
+
+    for setting_name, setting_value in data.items():
+        query_db('''
+            UPDATE ai_dispatch_settings
+            SET setting_value = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE setting_name = ?
+        ''', (str(setting_value), setting_name), commit=True)
+
+    return jsonify({'success': True, 'message': 'Settings updated'})
+
+# ============ AI KNOWLEDGE PAGE ============
+
+# ============ DRIVER HOME LOCATIONS ============
+
+@app.route('/api/ai/driver-locations')
+def get_driver_locations():
+    """Get all drivers with their home/parking locations"""
+    drivers = query_db('''
+        SELECT d.id, d.name, d.home_plant_id, d.home_location, d.home_city,
+               p.name as plant_name, p.city as plant_city
+        FROM drivers d
+        LEFT JOIN plants p ON d.home_plant_id = p.id
+        WHERE d.status = 'active'
+        ORDER BY d.name
+    ''')
+
+    return jsonify({
+        'success': True,
+        'drivers': [dict(d) for d in drivers]
+    })
+
+@app.route('/api/ai/driver-locations/<int:driver_id>', methods=['PUT'])
+def update_driver_location(driver_id):
+    """Update a driver's home/parking location"""
+    data = request.get_json()
+
+    home_plant_id = data.get('home_plant_id')
+    home_location = data.get('home_location')
+    home_city = data.get('home_city')
+
+    # If plant ID provided, get the plant details
+    if home_plant_id:
+        plant = query_db('SELECT name, city FROM plants WHERE id = ?', (home_plant_id,), one=True)
+        if plant:
+            home_location = home_location or plant['name']
+            home_city = home_city or plant['city']
+
+    query_db('''
+        UPDATE drivers
+        SET home_plant_id = ?, home_location = ?, home_city = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ''', (home_plant_id, home_location, home_city, driver_id), commit=True)
+
+    return jsonify({'success': True, 'message': 'Driver location updated'})
+
+@app.route('/api/ai/driver-locations/bulk', methods=['POST'])
+def bulk_update_driver_locations():
+    """Bulk update driver home locations"""
+    data = request.get_json()
+    updates = data.get('updates', [])
+
+    updated = 0
+    for update in updates:
+        driver_name = update.get('driver_name')
+        plant_name = update.get('plant_name')
+
+        if not driver_name or not plant_name:
+            continue
+
+        # Find driver by name (partial match)
+        driver = query_db('''
+            SELECT id FROM drivers
+            WHERE LOWER(name) LIKE LOWER(?)
+            LIMIT 1
+        ''', (f'%{driver_name}%',), one=True)
+
+        # Find plant by name (partial match)
+        plant = query_db('''
+            SELECT id, name, city FROM plants
+            WHERE LOWER(name) LIKE LOWER(?)
+            LIMIT 1
+        ''', (f'%{plant_name}%',), one=True)
+
+        if driver and plant:
+            query_db('''
+                UPDATE drivers
+                SET home_plant_id = ?, home_location = ?, home_city = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (plant['id'], plant['name'], plant['city'], driver['id']), commit=True)
+            updated += 1
+
+    return jsonify({
+        'success': True,
+        'updated': updated,
+        'message': f'Updated {updated} driver locations'
+    })
+
+@app.route('/api/ai/load-driver-parking-data', methods=['POST'])
+def load_driver_parking_data():
+    """
+    Load the known driver parking locations.
+    This data was provided by the user.
+    """
+    # Driver parking data: driver name -> plant city
+    driver_parking = {
+        'Thor': 'Statesboro',
+        'Albert': 'Garden City',
+        'David Powell': 'Guyton',
+        'Tally Butler': 'Guyton',
+        'Keith Croft': 'Statesboro',
+        'Jerome Polite': 'Walthourville',
+        'Cleveland': 'Savannah',
+        'Ryan Reed': 'Walthourville',
+        'Donnell Davis': 'Statesboro',
+        'Kimberly Roberts': 'Bloomingdale',
+        'Donald Winter': 'Statesboro',
+        'Joseph Sargent': 'Statesboro',
+        'Lonnie': 'Midway',
+        'Rachel': 'Midway',
+        'Naquetig Lewis': 'Bloomingdale',
+        'David Houston': 'Walthourville',
+        'Glenn Goodno': 'Statesboro',
+        'Lesley Murphy': 'Walthourville',
+        'Rena': 'Bloomingdale',
+        'Jimmy Land': 'Macon',
+        'Bill Rumptz': 'Bloomingdale',
+        'Dorrell': 'Guyton',
+        'Alicia': 'Bloomingdale',
+        'Quadasha Jackson': 'Statesboro',
+    }
+
+    updated = 0
+    not_found_drivers = []
+    not_found_plants = []
+
+    for driver_name, plant_city in driver_parking.items():
+        # Find driver by name (flexible matching)
+        driver = query_db('''
+            SELECT id, name FROM drivers
+            WHERE LOWER(name) LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?)
+            LIMIT 1
+        ''', (f'%{driver_name}%', f'{driver_name}%'), one=True)
+
+        # Find plant by city
+        plant = query_db('''
+            SELECT id, name, city FROM plants
+            WHERE LOWER(city) LIKE LOWER(?)
+            LIMIT 1
+        ''', (f'%{plant_city}%',), one=True)
+
+        if driver and plant:
+            query_db('''
+                UPDATE drivers
+                SET home_plant_id = ?, home_location = ?, home_city = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (plant['id'], plant['name'], plant['city'], driver['id']), commit=True)
+            updated += 1
+        else:
+            if not driver:
+                not_found_drivers.append(driver_name)
+            if not plant:
+                not_found_plants.append(plant_city)
+
+    return jsonify({
+        'success': True,
+        'updated': updated,
+        'total': len(driver_parking),
+        'not_found_drivers': list(set(not_found_drivers)),
+        'not_found_plants': list(set(not_found_plants)),
+        'message': f'Updated {updated} of {len(driver_parking)} driver locations'
+    })
+
+@app.route('/ai-knowledge')
+def ai_knowledge():
+    """AI Knowledge management page"""
+    trucks = query_db('''
+        SELECT id, truck_number, truck_name, truck_type, capacity_tons,
+               home_location, home_city, notes, status
+        FROM trucks ORDER BY truck_number
+    ''')
+
+    drivers = query_db('''
+        SELECT d.id, d.name, d.home_plant_id, d.home_location, d.home_city,
+               p.name as plant_name
+        FROM drivers d
+        LEFT JOIN plants p ON d.home_plant_id = p.id
+        WHERE d.status = 'active'
+        ORDER BY d.name
+    ''')
+
+    routes = query_db('SELECT * FROM route_distances ORDER BY origin_name')
+    settings = query_db('SELECT * FROM ai_dispatch_settings ORDER BY setting_name')
+    plants = query_db('SELECT id, name, city FROM plants WHERE status = "active" ORDER BY name')
+
+    return render_template('ai_knowledge.html',
+                          trucks=trucks,
+                          drivers=drivers,
+                          routes=routes,
+                          settings=settings,
+                          plants=plants,
+                          truck_types=list(TruckType.CHARACTERISTICS.keys()))
 
 @app.route('/plant-materials')
 def plant_materials():
@@ -1502,6 +2081,196 @@ def ensure_tables_exist():
 
 # Run table check on startup
 ensure_tables_exist()
+
+# ============ AI KNOWLEDGE INITIALIZATION ============
+
+def ensure_ai_tables_exist():
+    """Create AI-specific tables if they don't exist"""
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Add driver home location columns if they don't exist
+    driver_ai_columns = [
+        ('home_plant_id', 'INTEGER'),
+        ('home_location', 'TEXT'),
+        ('home_city', 'TEXT'),
+    ]
+
+    for col_name, col_def in driver_ai_columns:
+        try:
+            cur.execute(f'ALTER TABLE drivers ADD COLUMN {col_name} {col_def}')
+        except:
+            pass  # Column already exists
+
+    # Add truck AI columns if they don't exist
+    truck_ai_columns = [
+        ('truck_type', 'TEXT DEFAULT "end_dump"'),
+        ('truck_name', 'TEXT'),
+        ('home_location', 'TEXT'),
+        ('home_city', 'TEXT'),
+        ('home_lat', 'REAL'),
+        ('home_lon', 'REAL'),
+        ('specialty_materials', 'TEXT'),
+        ('avoid_materials', 'TEXT'),
+        ('fuel_efficiency_mpg', 'REAL DEFAULT 6.0'),
+        ('avg_speed_loaded_mph', 'REAL DEFAULT 50'),
+        ('avg_speed_empty_mph', 'REAL DEFAULT 55'),
+        ('load_time_minutes', 'REAL DEFAULT 10'),
+        ('unload_time_minutes', 'REAL DEFAULT 5'),
+    ]
+
+    for col_name, col_def in truck_ai_columns:
+        try:
+            cur.execute(f'ALTER TABLE trucks ADD COLUMN {col_name} {col_def}')
+        except:
+            pass  # Column already exists
+
+    # Create route_distances table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS route_distances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            origin_name TEXT NOT NULL,
+            origin_type TEXT,
+            destination_name TEXT NOT NULL,
+            destination_type TEXT,
+            distance_miles REAL NOT NULL,
+            typical_drive_time_minutes REAL,
+            road_type TEXT DEFAULT 'highway',
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(origin_name, destination_name)
+        )
+    ''')
+
+    # Create location_coordinates table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS location_coordinates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            location_name TEXT NOT NULL UNIQUE,
+            location_type TEXT,
+            city TEXT,
+            state TEXT,
+            latitude REAL,
+            longitude REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create truck_productivity_history table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS truck_productivity_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            truck_id INTEGER NOT NULL,
+            driver_id INTEGER,
+            date TEXT NOT NULL,
+            origin_location TEXT,
+            destination_location TEXT,
+            material_code TEXT,
+            total_loads INTEGER DEFAULT 0,
+            total_tons REAL DEFAULT 0,
+            total_hours REAL DEFAULT 0,
+            total_miles REAL DEFAULT 0,
+            tons_per_hour REAL,
+            cost_per_ton REAL,
+            cycle_time_avg_minutes REAL,
+            efficiency_score REAL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (truck_id) REFERENCES trucks(id),
+            FOREIGN KEY (driver_id) REFERENCES drivers(id)
+        )
+    ''')
+
+    # Create ai_dispatch_settings table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS ai_dispatch_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            setting_name TEXT NOT NULL UNIQUE,
+            setting_value TEXT,
+            setting_type TEXT DEFAULT 'string',
+            description TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Insert default AI settings
+    default_settings = [
+        ('efficiency_factor', '0.85', 'number', 'Work efficiency factor (0-1)'),
+        ('target_tons_per_day', '100', 'number', 'Target tons per day for scoring'),
+        ('max_deadhead_miles', '50', 'number', 'Maximum acceptable deadhead distance'),
+        ('work_start_time', '06:00', 'string', 'Default work start time'),
+        ('work_end_time', '18:00', 'string', 'Default work end time'),
+    ]
+    for name, value, stype, desc in default_settings:
+        cur.execute('''
+            INSERT OR IGNORE INTO ai_dispatch_settings (setting_name, setting_value, setting_type, description)
+            VALUES (?, ?, ?, ?)
+        ''', (name, value, stype, desc))
+
+    # Create supplier_hours table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS supplier_hours (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            supplier_name TEXT NOT NULL,
+            pickup_location_id INTEGER,
+            weekday_open TEXT DEFAULT '06:00',
+            weekday_close TEXT DEFAULT '17:00',
+            saturday_open TEXT,
+            saturday_close TEXT DEFAULT '12:00',
+            sunday_open TEXT,
+            sunday_close TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+def load_ai_knowledge_from_db():
+    """Load truck and route knowledge from database into AI engine"""
+    global ai_engine
+
+    # Load trucks with AI knowledge
+    trucks = query_db('''
+        SELECT id, truck_number, truck_type, truck_name, capacity_tons,
+               home_location, home_city, home_lat, home_lon,
+               specialty_materials, avoid_materials, notes
+        FROM trucks WHERE status = 'active'
+    ''')
+
+    for truck in trucks:
+        specialty = json.loads(truck['specialty_materials']) if truck['specialty_materials'] else []
+        avoid = json.loads(truck['avoid_materials']) if truck['avoid_materials'] else []
+
+        ai_engine.register_truck(
+            truck_id=str(truck['id']),
+            truck_name=truck['truck_name'] or truck['truck_number'],
+            truck_type=truck['truck_type'] or TruckType.END_DUMP,
+            capacity_tons=truck['capacity_tons'] or 22.0,
+            home_location=truck['home_location'],
+            home_city=truck['home_city'],
+            home_lat=truck['home_lat'],
+            home_lon=truck['home_lon'],
+            specialty_materials=specialty,
+            avoid_materials=avoid,
+            notes=truck['notes']
+        )
+
+    # Load route distances
+    routes = query_db('SELECT origin_name, destination_name, distance_miles FROM route_distances')
+    for route in routes:
+        ai_engine.add_route(route['origin_name'], route['destination_name'], route['distance_miles'])
+
+    # Load location coordinates
+    locations = query_db('SELECT location_name, latitude, longitude FROM location_coordinates WHERE latitude IS NOT NULL')
+    for loc in locations:
+        ai_engine.add_location(loc['location_name'], loc['latitude'], loc['longitude'])
+
+# Initialize AI tables and load knowledge
+ensure_ai_tables_exist()
+load_ai_knowledge_from_db()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5500)

@@ -1,0 +1,582 @@
+{% extends "base.html" %}
+
+{% block title %}AI Knowledge Base - SRM Dispatch{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>AI Dispatch Knowledge Base</h2>
+        <div>
+            <button class="btn btn-success" onclick="loadDriverParkingData()">
+                Load Driver Parking Data
+            </button>
+            <button class="btn btn-primary" onclick="testProductivity()">
+                Test Productivity Calculator
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-4" id="knowledgeTabs" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="drivers-tab" data-bs-toggle="tab" href="#drivers" role="tab">
+                Driver Locations <span class="badge bg-secondary">{{ drivers|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="trucks-tab" data-bs-toggle="tab" href="#trucks" role="tab">
+                Truck Knowledge <span class="badge bg-secondary">{{ trucks|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="routes-tab" data-bs-toggle="tab" href="#routes" role="tab">
+                Routes <span class="badge bg-secondary">{{ routes|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="productivity-tab" data-bs-toggle="tab" href="#productivity" role="tab">
+                Productivity Calculator
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="settings-tab" data-bs-toggle="tab" href="#settings" role="tab">
+                AI Settings
+            </a>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="knowledgeTabContent">
+        <!-- Driver Locations Tab -->
+        <div class="tab-pane fade show active" id="drivers" role="tabpanel">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Driver Home/Parking Locations</h5>
+                    <small class="text-muted">Where each driver parks their truck overnight</small>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Driver Name</th>
+                                    <th>Home Plant</th>
+                                    <th>City</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for driver in drivers %}
+                                <tr>
+                                    <td><strong>{{ driver.name }}</strong></td>
+                                    <td>{{ driver.plant_name or '-' }}</td>
+                                    <td>{{ driver.home_city or '-' }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                onclick="editDriverLocation({{ driver.id }}, '{{ driver.name }}')">
+                                            Edit
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trucks Tab -->
+        <div class="tab-pane fade" id="trucks" role="tabpanel">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Truck Knowledge Base</h5>
+                    <small class="text-muted">Truck types, capacities, and characteristics</small>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Truck #</th>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Capacity</th>
+                                    <th>Home Location</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for truck in trucks %}
+                                <tr>
+                                    <td><strong>{{ truck.truck_number }}</strong></td>
+                                    <td>{{ truck.truck_name or '-' }}</td>
+                                    <td>
+                                        <span class="badge bg-info">{{ truck.truck_type or 'end_dump' }}</span>
+                                    </td>
+                                    <td>{{ truck.capacity_tons or 22 }} tons</td>
+                                    <td>{{ truck.home_city or '-' }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                onclick="editTruckKnowledge({{ truck.id }})">
+                                            Edit
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Routes Tab -->
+        <div class="tab-pane fade" id="routes" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0">Known Routes</h5>
+                        <small class="text-muted">Pre-configured distances between locations</small>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="showAddRouteModal()">
+                        Add Route
+                    </button>
+                </div>
+                <div class="card-body">
+                    {% if routes %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Origin</th>
+                                    <th>Destination</th>
+                                    <th>Distance</th>
+                                    <th>Drive Time</th>
+                                    <th>Road Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for route in routes %}
+                                <tr>
+                                    <td>{{ route.origin_name }}</td>
+                                    <td>{{ route.destination_name }}</td>
+                                    <td><strong>{{ route.distance_miles }} mi</strong></td>
+                                    <td>{{ route.typical_drive_time_minutes or '-' }} min</td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ route.road_type or 'highway' }}</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <p class="mb-2">No custom routes configured yet. The AI uses built-in Georgia location data:</p>
+                        <ul class="mb-0">
+                            <li>Brunswick, Savannah, Statesboro, Macon, Dublin (Plants)</li>
+                            <li>Garden City (Vulcan), Pembroke (Martin Marietta), etc.</li>
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Productivity Calculator Tab -->
+        <div class="tab-pane fade" id="productivity" role="tabpanel">
+            <div class="row">
+                <div class="col-md-5">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Productivity Calculator</h5>
+                            <small class="text-muted">Estimate tons/day for a route</small>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Origin (Pickup)</label>
+                                <input type="text" class="form-control" id="prodOrigin"
+                                       placeholder="e.g., garden_city, pembroke" value="garden_city">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Destination (Plant/Job)</label>
+                                <input type="text" class="form-control" id="prodDestination"
+                                       placeholder="e.g., brunswick, savannah" value="brunswick">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Truck Type</label>
+                                <select class="form-select" id="prodTruckType">
+                                    <option value="long_dump">Long Dump (Semi) - 24 tons</option>
+                                    <option value="short_dump">Short Dump (Tandem) - 18 tons</option>
+                                    <option value="belly_dump">Belly Dump - 26 tons</option>
+                                    <option value="end_dump" selected>End Dump (Standard) - 22 tons</option>
+                                    <option value="super_dump">Super Dump - 25 tons</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Material</label>
+                                <select class="form-select" id="prodMaterial">
+                                    <option value="57" selected>57 Stone</option>
+                                    <option value="SAND">Sand</option>
+                                    <option value="67">67 Stone</option>
+                                    <option value="89">89 Stone</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary w-100" onclick="calculateProductivity()">
+                                Calculate Productivity
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-7">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Results</h5>
+                        </div>
+                        <div class="card-body" id="productivityResults">
+                            <div class="text-center text-muted py-4">
+                                <p>Enter route details and click Calculate</p>
+                                <p class="small">Example: Thor (long dump) hauling 57s from Garden City to Brunswick</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div class="tab-pane fade" id="settings" role="tabpanel">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">AI Dispatch Settings</h5>
+                    <small class="text-muted">Configure AI optimization parameters</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for setting in settings %}
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">{{ setting.setting_name | replace('_', ' ') | title }}</label>
+                            <input type="text" class="form-control"
+                                   id="setting_{{ setting.setting_name }}"
+                                   value="{{ setting.setting_value }}"
+                                   data-setting="{{ setting.setting_name }}">
+                            <small class="text-muted">{{ setting.description }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Driver Location Modal -->
+<div class="modal fade" id="editDriverModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Driver Location</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editDriverId">
+                <p>Driver: <strong id="editDriverName"></strong></p>
+                <div class="mb-3">
+                    <label class="form-label">Home Plant</label>
+                    <select class="form-select" id="editDriverPlant">
+                        <option value="">-- Select Plant --</option>
+                        {% for plant in plants %}
+                        <option value="{{ plant.id }}">{{ plant.name }} ({{ plant.city }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveDriverLocation()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Truck Modal -->
+<div class="modal fade" id="editTruckModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Truck Knowledge</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editTruckId">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Truck Name</label>
+                        <input type="text" class="form-control" id="editTruckName" placeholder="e.g., Thor">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Truck Type</label>
+                        <select class="form-select" id="editTruckType">
+                            <option value="long_dump">Long Dump (Semi)</option>
+                            <option value="short_dump">Short Dump (Tandem)</option>
+                            <option value="belly_dump">Belly Dump</option>
+                            <option value="end_dump">End Dump (Standard)</option>
+                            <option value="super_dump">Super Dump</option>
+                            <option value="transfer">Transfer Dump</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Capacity (tons)</label>
+                        <input type="number" class="form-control" id="editTruckCapacity" step="0.5">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Home City</label>
+                        <input type="text" class="form-control" id="editTruckHomeCity" placeholder="e.g., Statesboro">
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="editTruckNotes" rows="2"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveTruckKnowledge()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Route Modal -->
+<div class="modal fade" id="addRouteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Route</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Origin</label>
+                    <input type="text" class="form-control" id="addRouteOrigin" placeholder="e.g., garden_city">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Destination</label>
+                    <input type="text" class="form-control" id="addRouteDestination" placeholder="e.g., brunswick">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Distance (miles)</label>
+                    <input type="number" class="form-control" id="addRouteDistance" step="0.1">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Drive Time (minutes)</label>
+                    <input type="number" class="form-control" id="addRouteDriveTime">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveRoute()">Add Route</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load driver parking data
+function loadDriverParkingData() {
+    if (!confirm('Load pre-configured driver parking locations?')) return;
+
+    fetch('/api/ai/load-driver-parking-data', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Updated ${data.updated} of ${data.total} driver locations.\n\nNot found drivers: ${data.not_found_drivers.join(', ') || 'None'}\nNot found plants: ${data.not_found_plants.join(', ') || 'None'}`);
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+}
+
+// Edit driver location
+function editDriverLocation(driverId, driverName) {
+    document.getElementById('editDriverId').value = driverId;
+    document.getElementById('editDriverName').textContent = driverName;
+    new bootstrap.Modal(document.getElementById('editDriverModal')).show();
+}
+
+function saveDriverLocation() {
+    const driverId = document.getElementById('editDriverId').value;
+    const plantId = document.getElementById('editDriverPlant').value;
+
+    fetch(`/api/ai/driver-locations/${driverId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ home_plant_id: plantId })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    });
+}
+
+// Edit truck knowledge
+function editTruckKnowledge(truckId) {
+    fetch(`/api/ai/truck-knowledge/${truckId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const truck = data.truck;
+                document.getElementById('editTruckId').value = truck.id;
+                document.getElementById('editTruckName').value = truck.truck_name || '';
+                document.getElementById('editTruckType').value = truck.truck_type || 'end_dump';
+                document.getElementById('editTruckCapacity').value = truck.capacity_tons || 22;
+                document.getElementById('editTruckHomeCity').value = truck.home_city || '';
+                document.getElementById('editTruckNotes').value = truck.notes || '';
+                new bootstrap.Modal(document.getElementById('editTruckModal')).show();
+            }
+        });
+}
+
+function saveTruckKnowledge() {
+    const truckId = document.getElementById('editTruckId').value;
+
+    fetch(`/api/ai/truck-knowledge/${truckId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            truck_name: document.getElementById('editTruckName').value,
+            truck_type: document.getElementById('editTruckType').value,
+            capacity_tons: parseFloat(document.getElementById('editTruckCapacity').value),
+            home_city: document.getElementById('editTruckHomeCity').value,
+            notes: document.getElementById('editTruckNotes').value
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    });
+}
+
+// Add route
+function showAddRouteModal() {
+    new bootstrap.Modal(document.getElementById('addRouteModal')).show();
+}
+
+function saveRoute() {
+    fetch('/api/ai/routes/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            origin_name: document.getElementById('addRouteOrigin').value,
+            destination_name: document.getElementById('addRouteDestination').value,
+            distance_miles: parseFloat(document.getElementById('addRouteDistance').value),
+            typical_drive_time_minutes: parseInt(document.getElementById('addRouteDriveTime').value) || null
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    });
+}
+
+// Calculate productivity
+function calculateProductivity() {
+    const origin = document.getElementById('prodOrigin').value;
+    const destination = document.getElementById('prodDestination').value;
+    const truckType = document.getElementById('prodTruckType').value;
+    const material = document.getElementById('prodMaterial').value;
+
+    fetch('/api/ai/estimate-productivity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            origin: origin,
+            destination: destination,
+            truck_type: truckType,
+            material: material
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        const results = document.getElementById('productivityResults');
+        if (data.success) {
+            const p = data.productivity;
+            results.innerHTML = `
+                <div class="row text-center mb-4">
+                    <div class="col-4">
+                        <h2 class="text-primary mb-0">${p.loads_per_day}</h2>
+                        <small class="text-muted">Loads/Day</small>
+                    </div>
+                    <div class="col-4">
+                        <h2 class="text-success mb-0">${p.tons_per_day}</h2>
+                        <small class="text-muted">Tons/Day</small>
+                    </div>
+                    <div class="col-4">
+                        <h2 class="text-info mb-0">${p.cycle_time_minutes}</h2>
+                        <small class="text-muted">Min/Cycle</small>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-6">
+                        <p><strong>Distance:</strong> ${p.distance_miles} miles one-way</p>
+                        <p><strong>Round Trip:</strong> ${p.round_trip_miles} miles</p>
+                        <p><strong>Haul Type:</strong> <span class="badge bg-${p.haul_category === 'short' ? 'success' : p.haul_category === 'medium' ? 'warning' : 'danger'}">${p.haul_category}</span></p>
+                    </div>
+                    <div class="col-6">
+                        <p><strong>Truck Capacity:</strong> ${p.truck_capacity_tons} tons</p>
+                        <p><strong>Tons/Hour:</strong> ${p.tons_per_hour}</p>
+                        <p><strong>Efficient:</strong> ${p.is_efficient ? '<span class="text-success">Yes</span>' : '<span class="text-danger">No (< 3 loads)</span>'}</p>
+                    </div>
+                </div>
+                <div class="alert ${p.is_efficient ? 'alert-success' : 'alert-warning'} mt-3">
+                    <strong>Summary:</strong> ${data.summary}
+                </div>
+            `;
+        } else {
+            results.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+        }
+    });
+}
+
+// Test productivity
+function testProductivity() {
+    document.querySelector('a[href="#productivity"]').click();
+    setTimeout(calculateProductivity, 300);
+}
+
+// Save settings
+function saveSettings() {
+    const settings = {};
+    document.querySelectorAll('[data-setting]').forEach(input => {
+        settings[input.dataset.setting] = input.value;
+    });
+
+    fetch('/api/ai/settings/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert('Settings saved!');
+        }
+    });
+}
+</script>
+{% endblock %}
