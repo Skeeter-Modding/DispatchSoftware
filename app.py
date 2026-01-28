@@ -884,6 +884,376 @@ def samara_integration():
     """Samsara GPS integration page"""
     return render_template('samara.html')
 
+# ============ DRIVER-TRUCK AUTO-ASSIGNMENT ============
+
+@app.route('/driver-defaults')
+def driver_defaults():
+    """Manage default driver-truck assignments"""
+    defaults = query_db('''
+        SELECT dtd.*, d.name as driver_name, t.truck_number, tr.trailer_number
+        FROM driver_truck_defaults dtd
+        JOIN drivers d ON dtd.driver_id = d.id
+        JOIN trucks t ON dtd.truck_id = t.id
+        LEFT JOIN trailers tr ON dtd.trailer_id = tr.id
+        WHERE dtd.is_active = 1
+        ORDER BY d.name
+    ''')
+
+    # Get unassigned drivers
+    assigned_driver_ids = [d['driver_id'] for d in defaults]
+    all_drivers = query_db('SELECT * FROM drivers WHERE status="active" ORDER BY name')
+    unassigned_drivers = [d for d in all_drivers if d['id'] not in assigned_driver_ids]
+
+    trucks = query_db('SELECT * FROM trucks WHERE status="active" ORDER BY truck_number')
+    trailers = query_db('SELECT * FROM trailers WHERE status="active" ORDER BY trailer_number')
+
+    return render_template('driver_defaults.html',
+                         defaults=defaults,
+                         unassigned_drivers=unassigned_drivers,
+                         drivers=all_drivers,
+                         trucks=trucks,
+                         trailers=trailers)
+
+@app.route('/driver-defaults/add', methods=['POST'])
+def add_driver_default():
+    """Add or update driver-truck default"""
+    data = request.get_json() if request.is_json else request.form
+
+    driver_id = data.get('driver_id')
+    truck_id = data.get('truck_id')
+    trailer_id = data.get('trailer_id') or None
+
+    # Upsert - update if exists, insert if not
+    existing = query_db('SELECT id FROM driver_truck_defaults WHERE driver_id = ?', (driver_id,), one=True)
+
+    if existing:
+        query_db('''
+            UPDATE driver_truck_defaults
+            SET truck_id = ?, trailer_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE driver_id = ?
+        ''', (truck_id, trailer_id, driver_id), commit=True)
+    else:
+        query_db('''
+            INSERT INTO driver_truck_defaults (driver_id, truck_id, trailer_id)
+            VALUES (?, ?, ?)
+        ''', (driver_id, truck_id, trailer_id), commit=True)
+
+    if request.is_json:
+        return jsonify({'success': True})
+    return redirect(url_for('driver_defaults'))
+
+@app.route('/driver-defaults/<int:default_id>/delete', methods=['POST'])
+def delete_driver_default(default_id):
+    """Delete driver-truck default"""
+    query_db('DELETE FROM driver_truck_defaults WHERE id = ?', (default_id,), commit=True)
+    return jsonify({'success': True})
+
+@app.route('/assignments/auto-create', methods=['POST'])
+def auto_create_assignments():
+    """Auto-create today's assignments from driver defaults"""
+    today = datetime.date.today()
+
+    # Get all active driver defaults
+    defaults = query_db('''
+        SELECT dtd.*, d.name as driver_name
+        FROM driver_truck_defaults dtd
+        JOIN drivers d ON dtd.driver_id = d.id
+        WHERE dtd.is_active = 1 AND d.status = 'active'
+    ''')
+
+    created = 0
+    for default in defaults:
+        # Check if assignment already exists for today
+        existing = query_db('''
+            SELECT id FROM assignments
+            WHERE driver_id = ? AND assigned_date = ?
+        ''', (default['driver_id'], today), one=True)
+
+        if not existing:
+            query_db('''
+                INSERT INTO assignments (driver_id, truck_id, trailer_id, assigned_date, is_active)
+                VALUES (?, ?, ?, ?, 1)
+            ''', (default['driver_id'], default['truck_id'], default['trailer_id'], today), commit=True)
+            created += 1
+
+    return jsonify({'success': True, 'created': created, 'message': f'Created {created} assignments'})
+
+# ============ COST FACTORS ============
+
+@app.route('/cost-factors')
+def cost_factors():
+    """View and manage cost factors for AI optimization"""
+    factors = query_db('SELECT * FROM cost_factors ORDER BY factor_name')
+    return render_template('cost_factors.html', factors=factors)
+
+@app.route('/cost-factors/update', methods=['POST'])
+def update_cost_factor():
+    """Update a cost factor"""
+    data = request.get_json() if request.is_json else request.form
+
+    factor_name = data.get('factor_name')
+    factor_value = float(data.get('factor_value'))
+
+    query_db('''
+        UPDATE cost_factors
+        SET factor_value = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE factor_name = ?
+    ''', (factor_value, factor_name), commit=True)
+
+    return jsonify({'success': True})
+
+# ============ AI DISPATCH OPTIMIZATION ============
+
+def get_cost_factors():
+    """Get all cost factors as a dictionary"""
+    factors = query_db('SELECT factor_name, factor_value FROM cost_factors')
+    return {f['factor_name']: f['factor_value'] for f in factors}
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """Calculate distance between two points using Haversine formula (returns miles)"""
+    import math
+    R = 3959  # Earth's radius in miles
+
+    lat1_rad = math.radians(lat1)
+    lat2_rad = math.radians(lat2)
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
+
+    a = math.sin(delta_lat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+    return R * c
+
+def estimate_delivery_costs(distance_miles, quantity_tons, costs):
+    """Estimate costs for a delivery"""
+    # Fuel cost (round trip)
+    fuel_gallons = (distance_miles * 2) / costs.get('fuel_mpg', 6.0)
+    fuel_cost = fuel_gallons * costs.get('fuel_cost_per_gallon', 3.50)
+
+    # Time estimate
+    drive_time_hours = (distance_miles * 2) / costs.get('average_speed_mph', 35.0)
+    load_time_hours = (costs.get('load_time_minutes', 20) + costs.get('unload_time_minutes', 15)) / 60
+
+    total_hours = drive_time_hours + load_time_hours
+
+    # Labor and truck costs
+    driver_cost = total_hours * costs.get('driver_hourly_rate', 25.0)
+    truck_cost = total_hours * costs.get('truck_hourly_cost', 15.0)
+
+    total_cost = fuel_cost + driver_cost + truck_cost
+
+    return {
+        'fuel_cost': round(fuel_cost, 2),
+        'driver_cost': round(driver_cost, 2),
+        'truck_cost': round(truck_cost, 2),
+        'total_cost': round(total_cost, 2),
+        'estimated_hours': round(total_hours, 2),
+        'distance_miles': round(distance_miles, 1)
+    }
+
+@app.route('/api/ai/optimize', methods=['POST'])
+def ai_optimize_dispatch():
+    """AI optimization endpoint - recommends best driver/plant for orders"""
+    data = request.get_json()
+    order_ids = data.get('order_ids', [])
+
+    if not order_ids:
+        # Get all pending orders
+        pending = query_db('SELECT id FROM orders WHERE status = "pending"')
+        order_ids = [o['id'] for o in pending]
+
+    costs = get_cost_factors()
+    recommendations = []
+
+    # Get today's available drivers (those with assignments)
+    today = datetime.date.today()
+    available_drivers = query_db('''
+        SELECT a.*, d.name as driver_name, t.truck_number, t.capacity_tons
+        FROM assignments a
+        JOIN drivers d ON a.driver_id = d.id
+        JOIN trucks t ON a.truck_id = t.id
+        WHERE a.is_active = 1 AND a.assigned_date = ?
+    ''', (today,))
+
+    # Get plants with coordinates (we'll use city-based estimates)
+    plants = query_db('SELECT * FROM plants WHERE status = "active"')
+
+    for order_id in order_ids:
+        order = query_db('SELECT o.*, j.city as job_city, j.state as job_state FROM orders o LEFT JOIN jobs j ON o.job_id = j.id WHERE o.id = ?', (order_id,), one=True)
+
+        if not order:
+            continue
+
+        best_recommendation = None
+        best_score = -1
+
+        for driver in available_drivers:
+            # Count driver's current loads for today
+            current_loads = query_db('''
+                SELECT COUNT(*) as count FROM loads_active
+                WHERE driver_id = ? AND DATE(assigned_at) = ?
+            ''', (driver['driver_id'], today), one=True)['count']
+
+            # Prefer drivers with fewer loads (capacity-based)
+            load_score = max(0, 10 - current_loads) / 10  # 0-1 score
+
+            for plant in plants:
+                # Estimate distance based on cities (simplified)
+                # In production, you'd use actual coordinates or a mapping API
+                base_distance = 25  # Default estimate in miles
+
+                # Adjust based on same state
+                if order['job_state'] and plant['state'] == order['job_state']:
+                    base_distance *= 0.7  # Closer if same state
+
+                # Calculate costs
+                cost_estimate = estimate_delivery_costs(
+                    base_distance,
+                    order['quantity_tons'] or 20,
+                    costs
+                )
+
+                # Calculate score (lower cost = higher score)
+                cost_score = max(0, 1 - (cost_estimate['total_cost'] / 500))  # Normalize
+
+                # Combined score
+                total_score = (load_score * 0.4) + (cost_score * 0.6)
+
+                if total_score > best_score:
+                    best_score = total_score
+                    best_recommendation = {
+                        'order_id': order_id,
+                        'order_number': order['order_number'],
+                        'driver_id': driver['driver_id'],
+                        'driver_name': driver['driver_name'],
+                        'truck_id': driver['truck_id'],
+                        'truck_number': driver['truck_number'],
+                        'plant_id': plant['id'],
+                        'plant_name': plant['name'],
+                        'estimated_distance': cost_estimate['distance_miles'],
+                        'estimated_cost': cost_estimate['total_cost'],
+                        'estimated_hours': cost_estimate['estimated_hours'],
+                        'confidence': round(total_score * 100, 1),
+                        'reasoning': f"Driver has {current_loads} loads today. Est. {cost_estimate['distance_miles']} miles, ${cost_estimate['total_cost']} cost."
+                    }
+
+        if best_recommendation:
+            recommendations.append(best_recommendation)
+
+            # Save recommendation to database
+            query_db('''
+                INSERT INTO ai_recommendations (
+                    order_id, recommended_driver_id, recommended_truck_id,
+                    recommended_plant_id, estimated_distance_miles,
+                    estimated_time_minutes, estimated_fuel_cost, estimated_profit,
+                    confidence_score, reasoning
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                order_id,
+                best_recommendation['driver_id'],
+                best_recommendation['truck_id'],
+                best_recommendation['plant_id'],
+                best_recommendation['estimated_distance'],
+                best_recommendation['estimated_hours'] * 60,
+                best_recommendation['estimated_cost'] * 0.3,  # ~30% is fuel
+                0,  # Profit calculation would need material pricing
+                best_recommendation['confidence'],
+                best_recommendation['reasoning']
+            ), commit=True)
+
+    return jsonify({
+        'success': True,
+        'recommendations': recommendations,
+        'count': len(recommendations)
+    })
+
+@app.route('/api/ai/apply-recommendation', methods=['POST'])
+def apply_ai_recommendation():
+    """Apply an AI recommendation - assign the order to the recommended driver"""
+    data = request.get_json()
+
+    order_id = data.get('order_id')
+    driver_id = data.get('driver_id')
+    truck_id = data.get('truck_id')
+    plant_id = data.get('plant_id')
+
+    # Get order details
+    order = query_db('SELECT * FROM orders WHERE id = ?', (order_id,), one=True)
+
+    if not order:
+        return jsonify({'success': False, 'error': 'Order not found'}), 404
+
+    # Create load from order
+    today = datetime.datetime.now()
+    load_count = query_db(
+        'SELECT COUNT(*) as count FROM loads_active WHERE DATE(assigned_at) = ?',
+        (today.date(),), one=True
+    )['count']
+    load_number = f"{today.strftime('%Y%m%d')}-{int(driver_id):03d}-{load_count + 1:02d}"
+
+    query_db('''
+        INSERT INTO loads_active (
+            load_number, driver_id, truck_id,
+            job_id, plant_id, pickup_location_id, material_id, quantity_tons,
+            status, assigned_at, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'assigned', CURRENT_TIMESTAMP, ?)
+    ''', (load_number, driver_id, truck_id,
+          order['job_id'], plant_id or order['plant_id'], order['pickup_location_id'],
+          order['material_id'], order['quantity_tons'], order['notes']), commit=True)
+
+    # Update order status
+    query_db('UPDATE orders SET status = "assigned" WHERE id = ?', (order_id,), commit=True)
+
+    # Update recommendation status
+    query_db('''
+        UPDATE ai_recommendations SET status = "applied"
+        WHERE order_id = ? AND status = "pending"
+    ''', (order_id,), commit=True)
+
+    return jsonify({'success': True, 'load_number': load_number})
+
+@app.route('/api/ai/recommendations')
+def get_ai_recommendations():
+    """Get recent AI recommendations"""
+    recommendations = query_db('''
+        SELECT ar.*, o.order_number, d.name as driver_name,
+               t.truck_number, p.name as plant_name
+        FROM ai_recommendations ar
+        JOIN orders o ON ar.order_id = o.id
+        JOIN drivers d ON ar.recommended_driver_id = d.id
+        JOIN trucks t ON ar.recommended_truck_id = t.id
+        LEFT JOIN plants p ON ar.recommended_plant_id = p.id
+        WHERE ar.status = 'pending'
+        ORDER BY ar.confidence_score DESC
+    ''')
+
+    return jsonify({
+        'success': True,
+        'recommendations': [dict(r) for r in recommendations]
+    })
+
+# ============ PLANT MATERIALS ============
+
+@app.route('/plant-materials')
+def plant_materials():
+    """View materials available at each plant"""
+    materials_by_plant = query_db('''
+        SELECT pm.*, p.name as plant_name, p.city, p.state, m.name as material_name, m.code
+        FROM plant_materials pm
+        JOIN plants p ON pm.plant_id = p.id
+        JOIN material_types m ON pm.material_id = m.id
+        WHERE pm.is_available = 1
+        ORDER BY p.name, m.name
+    ''')
+
+    plants = query_db('SELECT * FROM plants WHERE status="active" ORDER BY name')
+    materials = query_db('SELECT * FROM material_types WHERE status="active" ORDER BY name')
+
+    return render_template('plant_materials.html',
+                         materials_by_plant=materials_by_plant,
+                         plants=plants,
+                         materials=materials)
+
 # ============ DATABASE INITIALIZATION ============
 
 def ensure_tables_exist():

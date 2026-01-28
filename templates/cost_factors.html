@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3 mb-0">
+            <i class="fas fa-calculator me-2 text-primary"></i>Cost Factors
+        </h1>
+        <p class="text-muted mt-2">Configure cost factors used by the AI dispatch optimization system.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-sliders-h me-2"></i>Current Cost Factors</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Factor</th>
+                                <th>Value</th>
+                                <th>Unit</th>
+                                <th>Description</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for factor in factors %}
+                            <tr>
+                                <td><strong>{{ factor.factor_name.replace('_', ' ').title() }}</strong></td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm" style="width: 100px;"
+                                           id="factor_{{ factor.factor_name }}" value="{{ factor.factor_value }}" step="0.01">
+                                </td>
+                                <td><span class="badge bg-secondary">{{ factor.unit }}</span></td>
+                                <td class="text-muted small">{{ factor.description }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="updateFactor('{{ factor.factor_name }}')">
+                                        <i class="fas fa-save"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-lightbulb me-2"></i>How It Works</h5>
+            </div>
+            <div class="card-body">
+                <p>The AI optimization uses these factors to calculate:</p>
+                <ul>
+                    <li><strong>Fuel Cost:</strong> Distance x 2 (round trip) / MPG x Price</li>
+                    <li><strong>Time Cost:</strong> Drive time + load/unload time</li>
+                    <li><strong>Labor Cost:</strong> Total hours x Driver rate</li>
+                    <li><strong>Equipment Cost:</strong> Total hours x Truck rate</li>
+                </ul>
+                <hr>
+                <p class="mb-0"><strong>Total Cost = Fuel + Labor + Equipment</strong></p>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Example Calculation</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>25 mile delivery:</strong></p>
+                <ul class="small">
+                    <li>Fuel: 50mi / 6mpg x $3.50 = $29.17</li>
+                    <li>Time: 1.4h drive + 0.6h load = 2h</li>
+                    <li>Labor: 2h x $25 = $50.00</li>
+                    <li>Truck: 2h x $15 = $30.00</li>
+                </ul>
+                <hr>
+                <p class="mb-0"><strong>Total: $109.17</strong></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateFactor(factorName) {
+    const value = document.getElementById('factor_' + factorName).value;
+
+    fetch('/cost-factors/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            factor_name: factorName,
+            factor_value: value
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show brief success indication
+            const btn = event.target.closest('button');
+            btn.classList.remove('btn-outline-primary');
+            btn.classList.add('btn-success');
+            btn.innerHTML = '<i class="fas fa-check"></i>';
+
+            setTimeout(() => {
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-outline-primary');
+                btn.innerHTML = '<i class="fas fa-save"></i>';
+            }, 1500);
+        } else {
+            alert('Failed to update');
+        }
+    });
+}
+</script>
+{% endblock %}
