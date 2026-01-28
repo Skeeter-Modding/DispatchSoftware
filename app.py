@@ -1710,17 +1710,21 @@ def apply_ai_recommendation():
     plant_id = data.get('plant_id')
 
     # Get order details
-    order = query_db('SELECT * FROM orders WHERE id = ?', (order_id,), one=True)
+    order_row = query_db('SELECT * FROM orders WHERE id = ?', (order_id,), one=True)
 
-    if not order:
+    if not order_row:
         return jsonify({'success': False, 'error': 'Order not found'}), 404
+
+    # Convert to dict for safe access
+    order = dict(order_row)
 
     # Create load from order
     today = datetime.datetime.now()
-    load_count = query_db(
+    load_count_row = query_db(
         'SELECT COUNT(*) as count FROM loads_active WHERE DATE(assigned_at) = ?',
         (today.date(),), one=True
-    )['count']
+    )
+    load_count = dict(load_count_row)['count'] if load_count_row else 0
     load_number = f"{today.strftime('%Y%m%d')}-{int(driver_id):03d}-{load_count + 1:02d}"
 
     query_db('''
@@ -1730,8 +1734,8 @@ def apply_ai_recommendation():
             status, assigned_at, notes
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'assigned', CURRENT_TIMESTAMP, ?)
     ''', (load_number, driver_id, truck_id,
-          order['job_id'], plant_id or order['plant_id'], order['pickup_location_id'],
-          order['material_id'], order['quantity_tons'], order['notes']), commit=True)
+          order.get('job_id'), plant_id or order.get('plant_id'), order.get('pickup_location_id'),
+          order.get('material_id'), order.get('quantity_tons', 25), order.get('notes', '')), commit=True)
 
     # Update order status
     query_db('UPDATE orders SET status = "assigned" WHERE id = ?', (order_id,), commit=True)

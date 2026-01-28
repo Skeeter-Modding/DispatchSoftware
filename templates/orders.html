@@ -554,7 +554,7 @@ function showAIRecommendations(recommendations) {
                     <div class="text-end">
                         <span class="badge bg-${rec.confidence >= 70 ? 'success' : rec.confidence >= 50 ? 'warning' : 'danger'} mb-1">${rec.confidence.toFixed(1)}% CONFIDENCE</span><br>
                         <span class="badge bg-info mb-1">$${estCost.toLocaleString()} EST. COST</span><br>
-                        <button class="btn btn-sm btn-primary mt-1" onclick="applyRecommendation(${rec.order_id}, ${rec.primary_driver_id}, ${rec.primary_truck_id}, ${rec.plant_id || 'null'})">
+                        <button class="btn btn-sm btn-primary mt-1" onclick="applyRecommendation(${rec.order_id}, ${rec.primary_driver_id}, ${rec.primary_truck_id}, ${rec.plant_id ? rec.plant_id : null})">
                             APPLY
                         </button>
                     </div>
