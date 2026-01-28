@@ -12,6 +12,14 @@ import json
 from functools import wraps
 import os
 
+# Groq AI Integration
+try:
+    from groq import Groq
+    GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
+    groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+except ImportError:
+    groq_client = None
+
 # Import AI Knowledge Engine
 from ai_knowledge import (
     AIDispatchEngine, TruckType, MaterialKnowledge,
@@ -978,6 +986,146 @@ def create_one_time_job():
 def ai_assistant():
     """AI Assistant page"""
     return render_template('ai_assistant.html')
+
+@app.route('/api/ai/chat', methods=['POST'])
+def ai_chat():
+    """AI Chat endpoint powered by Groq"""
+    if not groq_client:
+        return jsonify({
+            'success': False,
+            'response': 'AI service not configured. Please set GROQ_API_KEY environment variable.'
+        })
+
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '')
+
+        if not user_message:
+            return jsonify({'success': False, 'response': 'No message provided'})
+
+        # Gather context from database
+        today = datetime.date.today()
+
+        # Get today's assignments
+        assignments = query_db('''
+            SELECT a.*, d.name as driver_name, t.truck_number, t.truck_name
+            FROM assignments a
+            JOIN drivers d ON a.driver_id = d.id
+            JOIN trucks t ON a.truck_id = t.id
+            WHERE a.assigned_date = ? AND a.is_active = 1
+        ''', (today,))
+
+        # Get active loads
+        active_loads = query_db('''
+            SELECT la.*, d.name as driver_name, t.truck_number,
+                   j.job_name, j.city as job_city,
+                   p.name as plant_name,
+                   m.name as material_name
+            FROM loads_active la
+            LEFT JOIN drivers d ON la.driver_id = d.id
+            LEFT JOIN trucks t ON la.truck_id = t.id
+            LEFT JOIN jobs j ON la.job_id = j.id
+            LEFT JOIN plants p ON la.plant_id = p.id
+            LEFT JOIN material_types m ON la.material_id = m.id
+            WHERE la.status != 'complete'
+            ORDER BY la.assigned_at DESC
+            LIMIT 20
+        ''')
+
+        # Get pending orders
+        pending_orders = query_db('''
+            SELECT o.*, j.job_name, j.city as job_city,
+                   m.name as material_name, p.name as plant_name
+            FROM orders o
+            LEFT JOIN jobs j ON o.job_id = j.id
+            LEFT JOIN material_types m ON o.material_id = m.id
+            LEFT JOIN plants p ON o.plant_id = p.id
+            WHERE o.status IN ('pending', 'in_progress')
+            ORDER BY o.priority DESC, o.created_at
+            LIMIT 10
+        ''')
+
+        # Get trucks summary
+        trucks = query_db('''
+            SELECT id, truck_number, truck_name, truck_type, capacity_tons, home_city, status
+            FROM trucks WHERE status = 'active'
+        ''')
+
+        # Get drivers summary
+        drivers = query_db('''
+            SELECT id, name, home_city, status
+            FROM drivers WHERE status = 'active'
+        ''')
+
+        # Build context string
+        context_parts = []
+
+        context_parts.append(f"TODAY'S DATE: {today.strftime('%A, %B %d, %Y')}")
+
+        if assignments:
+            context_parts.append(f"\nTODAY'S DRIVER ASSIGNMENTS ({len(assignments)} drivers working):")
+            for a in assignments[:10]:
+                truck_name = a['truck_name'] or a['truck_number']
+                context_parts.append(f"  - {a['driver_name']} driving {truck_name} (Truck #{a['truck_number']})")
+        else:
+            context_parts.append("\nNO DRIVER ASSIGNMENTS TODAY")
+
+        if active_loads:
+            context_parts.append(f"\nACTIVE LOADS ({len(active_loads)}):")
+            for load in active_loads[:10]:
+                context_parts.append(f"  - Load {load['load_number']}: {load['driver_name']} - {load['status']} - {load.get('material_name', 'N/A')} to {load.get('job_city', 'N/A')}")
+        else:
+            context_parts.append("\nNO ACTIVE LOADS")
+
+        if pending_orders:
+            context_parts.append(f"\nPENDING ORDERS ({len(pending_orders)}):")
+            for order in pending_orders[:5]:
+                context_parts.append(f"  - Order {order['order_number']}: {order.get('quantity_tons', 0)} tons {order.get('material_name', 'material')} to {order.get('job_city', 'N/A')}")
+
+        context_parts.append(f"\nFLEET SUMMARY: {len(trucks)} active trucks, {len(drivers)} active drivers")
+
+        context = "\n".join(context_parts)
+
+        # System prompt
+        system_prompt = """You are the AI Assistant for SRM Dispatch, a trucking dispatch system for Smyrna Ready Mix concrete and aggregate hauling in Georgia and South Carolina.
+
+Your role is to help dispatchers with:
+- Tracking loads and driver status
+- Finding information about trucks, drivers, plants, and jobs
+- Answering questions about current operations
+- Providing dispatch recommendations
+- Explaining data and metrics
+
+Be concise, helpful, and professional. Use the context provided to give accurate, specific answers.
+If you don't have enough information to answer, say so clearly.
+Format responses for easy reading - use bullet points and short paragraphs.
+
+CURRENT OPERATIONS CONTEXT:
+""" + context
+
+        # Call Groq
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.7,
+            max_tokens=1024
+        )
+
+        response = chat_completion.choices[0].message.content
+
+        return jsonify({
+            'success': True,
+            'response': response
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'response': f'Error processing request: {str(e)}'
+        })
 
 @app.route('/samara/integration')
 def samara_integration():
