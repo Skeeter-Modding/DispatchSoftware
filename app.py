@@ -256,7 +256,8 @@ def assignments():
                          assignments=assignments,
                          drivers=drivers,
                          trucks=trucks,
-                         trailers=trailers)
+                         trailers=trailers,
+                         today=today.isoformat())
 
 @app.route('/assignments/add', methods=['POST'])
 def add_assignment():
@@ -278,6 +279,24 @@ def add_assignment():
     ''', (driver_id, truck_id, trailer_id, assigned_date), commit=True)
 
     return redirect(url_for('assignments'))
+
+@app.route('/assignments/<int:assignment_id>/delete', methods=['POST'])
+def delete_assignment(assignment_id):
+    """Delete an assignment"""
+    query_db('DELETE FROM assignments WHERE id = ?', (assignment_id,), commit=True)
+    return jsonify({'success': True})
+
+@app.route('/assignments/<int:assignment_id>/deactivate', methods=['POST'])
+def deactivate_assignment(assignment_id):
+    """Deactivate an assignment"""
+    query_db('UPDATE assignments SET is_active = 0 WHERE id = ?', (assignment_id,), commit=True)
+    return jsonify({'success': True})
+
+@app.route('/assignments/<int:assignment_id>/activate', methods=['POST'])
+def activate_assignment(assignment_id):
+    """Activate an assignment"""
+    query_db('UPDATE assignments SET is_active = 1 WHERE id = ?', (assignment_id,), commit=True)
+    return jsonify({'success': True})
 
 @app.route('/jobs')
 def jobs():
