@@ -101,16 +101,28 @@ def update_daily_summary(driver_id, date, conn=None):
     cur.execute('''
         SELECT COUNT(*) as count, COALESCE(SUM(quantity_tons), 0) as total_tons
         FROM loads_history
-        WHERE driver_id = ? AND DATE(created_at) = ?
+        WHERE driver_id = ? AND DATE(created_at) = ? AND status = 'complete'
     ''', (driver_id, date))
+    completed_result = cur.fetchone()
 
-    result = cur.fetchone()
+    # Get cancelled loads for this driver on this date
+    cur.execute('''
+        SELECT COUNT(*) as count
+        FROM loads_history
+        WHERE driver_id = ? AND DATE(created_at) = ? AND status = 'cancelled'
+    ''', (driver_id, date))
+    cancelled_result = cur.fetchone()
+
+    total_loads = completed_result['count'] + cancelled_result['count']
+    completed_loads = completed_result['count']
+    cancelled_loads = cancelled_result['count']
+    total_tons = completed_result['total_tons']
 
     # Insert or update daily summary
     cur.execute('''
-        INSERT OR REPLACE INTO daily_driver_summary (driver_id, date, total_loads, total_tons, completed_loads)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (driver_id, date, result['count'], result['total_tons'], result['count']))
+        INSERT OR REPLACE INTO daily_driver_summary (driver_id, date, total_loads, total_tons, completed_loads, cancelled_loads)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (driver_id, date, total_loads, total_tons, completed_loads, cancelled_loads))
 
     if should_close:
         conn.commit()
@@ -316,6 +328,18 @@ def pickup_locations():
     pickup_list = query_db('SELECT * FROM pickup_locations ORDER BY city, name')
     return render_template('pickup_locations.html', pickup_locations=pickup_list)
 
+@app.route('/api/pickup-locations/<int:location_id>/status', methods=['POST'])
+def update_pickup_location_status(location_id):
+    """Update pickup location status"""
+    data = request.get_json() if request.is_json else request.form
+    new_status = data.get('status', 'active')
+
+    query_db('''
+        UPDATE pickup_locations SET status = ? WHERE id = ?
+    ''', (new_status, location_id), commit=True)
+
+    return jsonify({'success': True})
+
 @app.route('/materials')
 def materials():
     """Materials management page"""
@@ -361,21 +385,25 @@ def loads():
 
     if status_filter:
         loads_list = query_db('''
-            SELECT l.*, d.name as driver_name, t.truck_number, j.job_name, j.address
+            SELECT l.*, d.name as driver_name, t.truck_number, j.job_name, j.address,
+                   m.name as product_type, l.assigned_at as scheduled_time
             FROM loads_active l
             JOIN drivers d ON l.driver_id = d.id
             JOIN trucks t ON l.truck_id = t.id
             JOIN jobs j ON l.job_id = j.id
+            LEFT JOIN material_types m ON l.material_id = m.id
             WHERE l.status = ?
             ORDER BY l.assigned_at DESC
         ''', (status_filter,))
     else:
         loads_list = query_db('''
-            SELECT l.*, d.name as driver_name, t.truck_number, j.job_name, j.address
+            SELECT l.*, d.name as driver_name, t.truck_number, j.job_name, j.address,
+                   m.name as product_type, l.assigned_at as scheduled_time
             FROM loads_active l
             JOIN drivers d ON l.driver_id = d.id
             JOIN trucks t ON l.truck_id = t.id
             JOIN jobs j ON l.job_id = j.id
+            LEFT JOIN material_types m ON l.material_id = m.id
             ORDER BY l.assigned_at DESC
         ''')
 
@@ -690,11 +718,14 @@ def driver_history(driver_id):
 
     # Get recent loads for this driver
     recent_loads = query_db('''
-        SELECT lh.*, j.job_name, p.name as plant_name, m.name as material_name
+        SELECT lh.*, j.job_name, p.name as plant_name, m.name as material_name,
+               t.truck_number, pl.name as pickup_location
         FROM loads_history lh
         LEFT JOIN jobs j ON lh.job_id = j.id
         LEFT JOIN plants p ON lh.plant_id = p.id
         LEFT JOIN material_types m ON lh.material_id = m.id
+        LEFT JOIN trucks t ON lh.truck_id = t.id
+        LEFT JOIN pickup_locations pl ON lh.pickup_location_id = pl.id
         WHERE lh.driver_id = ?
         ORDER BY lh.created_at DESC
         LIMIT 50
@@ -1280,7 +1311,146 @@ def ensure_tables_exist():
     conn = get_db()
     cur = conn.cursor()
 
-    # Check if orders table exists, create if not
+    # Create loads_active table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS loads_active (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            load_number TEXT UNIQUE,
+            driver_id INTEGER,
+            truck_id INTEGER,
+            trailer_id INTEGER,
+            assignment_id INTEGER,
+            job_id INTEGER,
+            plant_id INTEGER,
+            pickup_location_id INTEGER,
+            material_id INTEGER,
+            quantity_tons REAL DEFAULT 20.0,
+            status TEXT DEFAULT 'assigned',
+            assigned_at TIMESTAMP,
+            en_route_at TIMESTAMP,
+            at_job_at TIMESTAMP,
+            delivering_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create loads_history table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS loads_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            load_number TEXT,
+            driver_id INTEGER,
+            truck_id INTEGER,
+            trailer_id INTEGER,
+            assignment_id INTEGER,
+            job_id INTEGER,
+            plant_id INTEGER,
+            pickup_location_id INTEGER,
+            material_id INTEGER,
+            quantity_tons REAL DEFAULT 20.0,
+            status TEXT,
+            assigned_at TIMESTAMP,
+            en_route_at TIMESTAMP,
+            at_job_at TIMESTAMP,
+            delivering_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create daily_driver_summary table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS daily_driver_summary (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id INTEGER,
+            date TEXT,
+            total_loads INTEGER DEFAULT 0,
+            total_tons REAL DEFAULT 0,
+            completed_loads INTEGER DEFAULT 0,
+            cancelled_loads INTEGER DEFAULT 0,
+            UNIQUE(driver_id, date)
+        )
+    ''')
+
+    # Create assignments table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id INTEGER,
+            truck_id INTEGER,
+            trailer_id INTEGER,
+            assigned_date TEXT,
+            is_active BOOLEAN DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create driver_truck_defaults table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS driver_truck_defaults (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id INTEGER UNIQUE,
+            truck_id INTEGER,
+            trailer_id INTEGER,
+            is_active BOOLEAN DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create cost_factors table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS cost_factors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            factor_name TEXT UNIQUE,
+            factor_value REAL,
+            unit TEXT,
+            description TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Insert default cost factors if not exist
+    default_factors = [
+        ('fuel_cost_per_gallon', 3.50, '$/gallon', 'Current diesel fuel price'),
+        ('fuel_mpg', 6.0, 'mpg', 'Average truck fuel efficiency'),
+        ('driver_hourly_rate', 25.0, '$/hour', 'Driver hourly wage'),
+        ('truck_hourly_cost', 15.0, '$/hour', 'Truck operating cost per hour'),
+        ('average_speed_mph', 35.0, 'mph', 'Average driving speed'),
+        ('load_time_minutes', 20, 'minutes', 'Time to load at plant'),
+        ('unload_time_minutes', 15, 'minutes', 'Time to unload at job site')
+    ]
+    for factor in default_factors:
+        cur.execute('''
+            INSERT OR IGNORE INTO cost_factors (factor_name, factor_value, unit, description)
+            VALUES (?, ?, ?, ?)
+        ''', factor)
+
+    # Create ai_recommendations table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS ai_recommendations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER,
+            recommended_driver_id INTEGER,
+            recommended_truck_id INTEGER,
+            recommended_plant_id INTEGER,
+            estimated_distance_miles REAL,
+            estimated_time_minutes REAL,
+            estimated_fuel_cost REAL,
+            estimated_profit REAL,
+            confidence_score REAL,
+            reasoning TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create orders table
     cur.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1303,9 +1473,27 @@ def ensure_tables_exist():
         )
     ''')
 
+    # Create plant_materials table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS plant_materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plant_id INTEGER,
+            material_id INTEGER,
+            is_available BOOLEAN DEFAULT 1,
+            price_per_ton REAL,
+            UNIQUE(plant_id, material_id)
+        )
+    ''')
+
     # Add is_one_time column to jobs if it doesn't exist
     try:
         cur.execute('ALTER TABLE jobs ADD COLUMN is_one_time BOOLEAN DEFAULT 0')
+    except:
+        pass  # Column already exists
+
+    # Add cancelled_loads column to daily_driver_summary if it doesn't exist
+    try:
+        cur.execute('ALTER TABLE daily_driver_summary ADD COLUMN cancelled_loads INTEGER DEFAULT 0')
     except:
         pass  # Column already exists
 
