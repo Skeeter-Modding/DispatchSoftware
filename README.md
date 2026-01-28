@@ -1,204 +1,216 @@
-# Smyrna Ready Mix Dispatch System
+# SRM Dispatch - Smyrna Ready Mix Dispatch System
 
-A comprehensive dispatch management system for dump truck operations with automatic GPS tracking integration.
+A comprehensive AI-powered dispatch management system for dump truck and aggregate hauling operations.
+
+**Created by:** [Skeeter-Modding](https://github.com/Skeeter-Modding)
+
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
+![Flask](https://img.shields.io/badge/Flask-3.0-green.svg)
+![License](https://img.shields.io/badge/License-Proprietary-red.svg)
+
+---
 
 ## Features
 
-### 🚚 Core Functionality
-- **Driver Management**: Add, edit, and manage drivers with contact information
-- **Fleet Management**: Track trucks and trailers with capacity and maintenance info
-- **Daily Assignments**: Link drivers to trucks and trailers for daily operations
-- **Job Management**: Manage construction sites and delivery locations
-- **Load Dispatch**: Create and track individual loads with status updates
+### Core Dispatch Operations
+- **Driver Management** - Track drivers, contact info, home locations
+- **Fleet Management** - Trucks with capacity, type, and GPS device linking
+- **Daily Assignments** - Link drivers to trucks for daily operations
+- **Job Management** - Manage construction sites and delivery locations
+- **Order Management** - Create orders with tonnage tracking and fulfillment status
+- **Load Dispatch** - Create and track individual loads with real-time status
 
-### ⚡ Batch Dispatch
-- **Multi-load Creation**: Create 4-10 loads per driver in one operation
-- **Quick Templates**: Set product type, cubic yards, and delivery times
-- **Time Scheduling**: Automatic scheduling with customizable intervals
-- **Smart Routing**: Assign multiple jobs or repeat locations
+### AI-Powered Intelligence
+- **AI Dispatch Optimization** - Smart truck-to-order matching based on:
+  - Productivity calculations (tons/day per route)
+  - Deadhead distance minimization
+  - Workload balancing across drivers
+  - Truck type suitability for materials
+- **AI Assistant** - Conversational assistant powered by Groq (Llama 3.3 70B)
+  - Ask questions about operations in natural language
+  - Get real-time status updates
+  - Query drivers, loads, orders, and trucks
+- **Automatic Tonnage Splitting** - Large orders automatically split across multiple trucks
 
-### 📊 Dashboard & Tracking
-- **Real-time Overview**: View today's assignments, loads, and statistics
-- **Status Tracking**: Monitor load status (Assigned → En Route → At Job → Delivering → Complete)
-- **Quick Actions**: Fast access to common operations
-- **Auto-refresh**: Dashboard updates every 30 seconds
+### Real-Time Tracking
+- **Samara GPS Integration** - Automatic location updates from GPS devices
+- **Geofence Detection** - Auto-update load status based on location
+- **Status Workflow**: `Assigned → En Route → At Job → Delivering → Complete`
+- **Live Dashboard** - Real-time overview with auto-refresh
 
-### 🛰️ Samara Integration (Auto Tracking)
-- **GPS Tracking**: Automatic location updates from Samara devices
-- **Geofence Detection**: Auto-update load status based on location
-- **Real-time Sync**: Status updates synchronized every 5 minutes
-- **Device Management**: Link Samara device IDs to trucks
-- **Tracking History**: View location and timestamp history
+### Order Fulfillment
+- **Tonnage Tracking** - Track tons ordered vs. delivered
+- **Partial Load Handling** - Support for multi-day order fulfillment
+- **Priority Management** - Urgent, high, normal, low priority levels
+
+---
 
 ## Quick Start
 
-### 1. Install Dependencies
-```bash
-pip install -r requirements.txt
+### Local Development
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/Skeeter-Modding/DispatchSoftware.git
+   cd DispatchSoftware
+   ```
+
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set environment variables** (optional for AI features)
+   ```bash
+   export GROQ_API_KEY=your_groq_api_key
+   export SECRET_KEY=your_secret_key
+   ```
+
+4. **Run the application**
+   ```bash
+   python app.py
+   ```
+
+5. **Access the system**
+   Open browser to: `http://localhost:5500`
+
+### Deploy to Render
+
+1. Connect your GitHub repository to [Render](https://render.com)
+2. Create a new Web Service
+3. Set environment variables:
+   - `GROQ_API_KEY` - Your Groq API key for AI features
+   - `SECRET_KEY` - A secure random string
+4. Deploy
+
+---
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Backend | Flask 3.0 (Python 3.11+) |
+| Database | SQLite |
+| AI/LLM | Groq API (Llama 3.3 70B) |
+| Frontend | Bootstrap 5, Vanilla JS |
+| Icons | Font Awesome 6 |
+| Deployment | Render, Gunicorn |
+
+---
+
+## Security Features
+
+- **Rate Limiting** - 100 requests/minute per IP on AI endpoints
+- **Prompt Injection Protection** - Input sanitization and hardened system prompts
+- **XSS Prevention** - Output sanitization and Content Security Policy
+- **Security Headers** - X-Frame-Options, X-Content-Type-Options, etc.
+- **SQL Injection Protection** - Parameterized queries throughout
+- **Input Validation** - Whitelist validation on status updates
+
+---
+
+## Project Structure
+
+```
+DispatchSoftware/
+├── app.py                    # Main Flask application
+├── ai_knowledge.py           # AI dispatch engine and scoring
+├── requirements.txt          # Python dependencies
+├── database/
+│   ├── schema.sql           # Database schema
+│   └── srm_dispatch.db      # SQLite database
+└── templates/
+    ├── base.html            # Base template
+    ├── dashboard.html       # Main dashboard
+    ├── dispatch.html        # Dispatch interface
+    ├── orders.html          # Order management
+    ├── loads.html           # Load tracking
+    ├── ai_assistant.html    # AI chat interface
+    ├── drivers.html         # Driver management
+    ├── trucks.html          # Fleet management
+    └── samara.html          # GPS integration
 ```
 
-### 2. Initialize Database
-```bash
-python app.py
-```
-The database will be automatically created on first run.
+---
 
-### 3. Load Sample Data (Optional)
-```bash
-python init_sample_data.py
-```
-This will populate the system with sample drivers, trucks, jobs, and loads for testing.
+## API Endpoints
 
-### 4. Start the Application
-```bash
-python app.py
-```
+### AI Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/ai/optimize` | POST | Get AI dispatch recommendations |
+| `/api/ai/chat` | POST | Chat with AI assistant |
+| `/api/ai/apply-recommendation` | POST | Apply an AI recommendation |
 
-### 5. Access the System
-Open your browser and navigate to: `http://localhost:5000`
+### Load Management
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/loads/<id>/status` | POST | Update load status |
+| `/api/loads/create` | POST | Create new load |
 
-## System Architecture
+### Orders
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/orders` | GET/POST | List/create orders |
+| `/api/orders/<id>` | DELETE | Delete order |
 
-### Database Structure
-- **drivers**: Driver information and contact details
-- **trucks**: Truck fleet with Samara device IDs
-- **trailers**: Trailer inventory
-- **assignments**: Daily driver-truck-trailer assignments
-- **jobs**: Construction sites and delivery locations
-- **loads**: Individual load records with status tracking
-- **tracking_events**: GPS and location history from Samara
+---
 
-### Load Status Workflow
-```
-Assigned → En Route → At Job → Delivering → Complete
-```
+## Environment Variables
 
-### Samara Integration
-The system is designed to integrate with Samara GPS tracking devices:
-1. Add Samara device ID to truck records
-2. Enable tracking on loads (enabled by default)
-3. Automatic status updates based on GPS location
-4. Geofence detection for job sites
-5. Real-time sync every 5 minutes
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GROQ_API_KEY` | For AI | Groq API key for AI assistant |
+| `SECRET_KEY` | Recommended | Flask session secret key |
 
-## Usage Guide
+---
+
+## Usage
 
 ### Daily Workflow
 
 1. **Morning Setup**
-   - Create driver assignments (link drivers to trucks/trailers)
-   - Verify Samara devices are linked to trucks
-   - Check active jobs and locations
+   - Go to Dispatch → Create driver assignments
+   - Link drivers to trucks for the day
 
-2. **Batch Dispatch (4-10 loads per driver)**
-   - Go to Dispatch page
-   - Click "Batch Create Loads"
-   - Select drivers and load parameters
-   - Set job, product type, cubic yards
-   - Configure start time and intervals
-   - Click "Create All Loads"
+2. **Create Orders**
+   - Orders → New Order
+   - Set customer, material, tonnage, priority
 
-3. **Monitor Operations**
-   - Dashboard shows real-time overview
-   - Load Tracking page for detailed status
-   - Samara Integration page for GPS updates
+3. **AI Optimization**
+   - Click "AI Optimize" on Orders page
+   - Review recommendations (shows truck assignments, tons/day capacity)
+   - Click "Apply" or "Apply All" to create loads
 
-4. **Status Updates**
-   - Automatic updates from Samara tracking
-   - Manual status updates via dropdown
-   - Tracking history maintained for each load
+4. **Monitor Operations**
+   - Dashboard for overview
+   - Loads page for detailed tracking
+   - AI Assistant for questions
 
-### Samara Setup
+### AI Assistant Examples
 
-To enable automatic tracking:
+Ask the AI assistant questions like:
+- "What's the status today?"
+- "Who's driving today?"
+- "How many pending orders do we have?"
+- "Tell me about loads going to Brunswick"
 
-1. Add Samara device IDs to trucks:
-   - Go to Trucks → Add/Edit Truck
-   - Enter Samara Device ID
-   - Save changes
+---
 
-2. Configure geofences (optional):
-   - Set geofence radius in Samara Integration
-   - Define job site coordinates
-   - Auto-update triggers on entry/exit
+## Contributing
 
-3. Monitor tracking:
-   - Visit Samara Integration page
-   - View currently tracked loads
-   - Check sync status and history
+This is a proprietary system for Smyrna Ready Mix operations.
 
-## Sample Data
-
-The system includes sample data for testing:
-- 5 drivers with contact information
-- 5 trucks with Samara devices linked
-- 5 trailers
-- 5 active job sites
-- 5 daily assignments
-- Multiple loads with various statuses
-
-## Technical Stack
-
-- **Backend**: Flask (Python 3.11)
-- **Database**: SQLite
-- **Frontend**: Bootstrap 5, jQuery
-- **Icons**: Font Awesome 6
-- **Tracking**: Samara API integration (structured for implementation)
-
-## File Structure
-
-```
-srm_dispatch/
-├── app.py                          # Main Flask application
-├── init_sample_data.py            # Sample data initialization
-├── requirements.txt                # Python dependencies
-├── database/
-│   ├── schema.sql                 # Database schema
-│   └── srm_dispatch.db            # SQLite database (created on run)
-├── templates/
-│   ├── base.html                  # Base template
-│   ├── dashboard.html             # Dashboard page
-│   ├── dispatch.html              # Dispatch interface
-│   ├── drivers.html               # Driver management
-│   ├── trucks.html                # Truck management
-│   ├── trailers.html              # Trailer management
-│   ├── assignments.html           # Assignment management
-│   ├── jobs.html                  # Job management
-│   ├── loads.html                 # Load tracking
-│   └── samara.html                # Samara integration
-└── static/
-    ├── css/
-    │   └── style.css              # Custom styles
-    └── js/
-        └── main.js                # JavaScript functions
-```
-
-## Features for Smyrna Ready Mix
-
-### Optimized for Daily Operations
-- **No More Manual Tracking**: Batch dispatch creates 4-10 loads per driver instantly
-- **Quick Assignment**: One-click driver-truck-trailer linking
-- **Auto-Status Updates**: Samara tracking eliminates manual status checks
-- **Real-time Dashboard**: See everything at a glance
-
-### Scalability
-- Supports unlimited drivers, trucks, and jobs
-- Handles hundreds of daily loads
-- Historical data retained indefinitely
-- Fast SQLite database for quick queries
-
-### Future Enhancements
-- Mobile app for drivers
-- Advanced reporting and analytics
-- Invoice generation
-- Customer notifications
-- Weather integration
-- Route optimization
-
-## Support
-
-For questions or issues with the dispatch system, contact your system administrator.
+---
 
 ## License
 
 Proprietary - Smyrna Ready Mix Internal Use
+
+---
+
+## Author
+
+**Created by [Skeeter-Modding](https://github.com/Skeeter-Modding)**
+
+For support, open an issue on GitHub.
