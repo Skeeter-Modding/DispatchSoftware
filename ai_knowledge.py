@@ -24,19 +24,21 @@ class TruckType:
     """Truck type categories with their characteristics"""
 
     # Truck type constants
-    LONG_DUMP = "long_dump"          # End dump semi-trailer (22-26 tons)
-    SHORT_DUMP = "short_dump"        # Tandem/tri-axle dump (14-20 tons)
+    LONG_DUMP = "long_dump"          # End dump semi-trailer with trailer (25 tons)
+    SHORT_DUMP = "short_dump"        # Tandem dump truck, no trailer (18 tons)
     BELLY_DUMP = "belly_dump"        # Bottom dump trailer (24-30 tons)
     SUPER_DUMP = "super_dump"        # Maximum payload dump (up to 26 tons)
     TRANSFER = "transfer"            # Transfer dump (26-27 tons)
-    END_DUMP = "end_dump"            # Standard end dump (20-25 tons)
+    END_DUMP = "end_dump"            # Standard end dump with trailer (25 tons)
+    LOWBOY = "lowboy"                # Lowboy/equipment hauler (not for aggregate)
+    TANDEM = "tandem"                # Tandem dump, no trailer (18 tons)
 
     # Type characteristics
     CHARACTERISTICS = {
         LONG_DUMP: {
-            "name": "Long Dump (Semi End Dump)",
-            "typical_capacity_tons": 24,
-            "min_capacity": 22,
+            "name": "Long Dump (Semi End Dump with Trailer)",
+            "typical_capacity_tons": 25,
+            "min_capacity": 24,
             "max_capacity": 26,
             "best_for": ["long_haul", "highway", "large_jobs"],
             "material_handling": ["all"],  # Most versatile
@@ -50,10 +52,10 @@ class TruckType:
             "notes": "Best for longer hauls. More efficient on highway. Takes longer to cycle but carries more."
         },
         SHORT_DUMP: {
-            "name": "Short Dump (Tandem/Tri-Axle)",
+            "name": "Tandem Dump (No Trailer)",
             "typical_capacity_tons": 18,
-            "min_capacity": 14,
-            "max_capacity": 22,
+            "min_capacity": 16,
+            "max_capacity": 20,
             "best_for": ["short_haul", "city", "tight_spaces"],
             "material_handling": ["all"],
             "unload_time_minutes": 3,
@@ -63,7 +65,7 @@ class TruckType:
             "avg_speed_empty_mph": 50,
             "can_handle_wet_materials": True,
             "can_handle_large_rocks": True,
-            "notes": "Better for short runs and tight job sites. Faster cycle but less capacity."
+            "notes": "Tandem dump truck without trailer. Better for short runs and tight job sites. Faster cycle but 18 tons max."
         },
         BELLY_DUMP: {
             "name": "Belly Dump (Bottom Dump)",
@@ -114,10 +116,10 @@ class TruckType:
             "notes": "High capacity for aggregate hauling. Can unload pup trailer separately."
         },
         END_DUMP: {
-            "name": "End Dump (Standard)",
-            "typical_capacity_tons": 22,
-            "min_capacity": 20,
-            "max_capacity": 25,
+            "name": "End Dump (With Trailer)",
+            "typical_capacity_tons": 25,
+            "min_capacity": 24,
+            "max_capacity": 26,
             "best_for": ["versatile", "stockpiling", "demolition"],
             "material_handling": ["all"],
             "unload_time_minutes": 4,
@@ -127,7 +129,39 @@ class TruckType:
             "avg_speed_empty_mph": 55,
             "can_handle_wet_materials": True,
             "can_handle_large_rocks": True,
-            "notes": "Most versatile. Handles all materials. Good for confined spaces."
+            "notes": "Standard end dump with trailer. 25 tons per load. Most versatile."
+        },
+        "lowboy": {
+            "name": "Lowboy (Equipment Hauler)",
+            "typical_capacity_tons": 0,
+            "min_capacity": 0,
+            "max_capacity": 0,
+            "best_for": ["equipment", "heavy_machinery", "excavators"],
+            "material_handling": [],  # Does not haul aggregate
+            "unload_time_minutes": 30,
+            "load_time_minutes": 30,
+            "fuel_efficiency_mpg": 4.5,
+            "avg_speed_loaded_mph": 45,
+            "avg_speed_empty_mph": 55,
+            "can_handle_wet_materials": False,
+            "can_handle_large_rocks": False,
+            "notes": "Equipment hauler only. Does NOT haul aggregate materials. Used for moving heavy equipment."
+        },
+        "tandem": {
+            "name": "Tandem Dump (No Trailer)",
+            "typical_capacity_tons": 18,
+            "min_capacity": 16,
+            "max_capacity": 20,
+            "best_for": ["short_haul", "city", "tight_spaces"],
+            "material_handling": ["all"],
+            "unload_time_minutes": 3,
+            "load_time_minutes": 8,
+            "fuel_efficiency_mpg": 6.5,
+            "avg_speed_loaded_mph": 45,
+            "avg_speed_empty_mph": 50,
+            "can_handle_wet_materials": True,
+            "can_handle_large_rocks": True,
+            "notes": "Tandem dump truck without trailer. 18 tons per load max."
         }
     }
 
