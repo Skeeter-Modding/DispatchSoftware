@@ -1137,14 +1137,16 @@ def ai_chat():
         if active_loads:
             context_parts.append(f"\nACTIVE LOADS ({len(active_loads)}):")
             for load in active_loads[:10]:
-                context_parts.append(f"  - Load {load['load_number']}: {load['driver_name']} - {load['status']} - {load.get('material_name', 'N/A')} to {load.get('job_city', 'N/A')}")
+                load_dict = dict(load)  # Convert sqlite3.Row to dict for .get() support
+                context_parts.append(f"  - Load {load_dict['load_number']}: {load_dict['driver_name']} - {load_dict['status']} - {load_dict.get('material_name', 'N/A')} to {load_dict.get('job_city', 'N/A')}")
         else:
             context_parts.append("\nNO ACTIVE LOADS")
 
         if pending_orders:
             context_parts.append(f"\nPENDING ORDERS ({len(pending_orders)}):")
             for order in pending_orders[:5]:
-                context_parts.append(f"  - Order {order['order_number']}: {order.get('quantity_tons', 0)} tons {order.get('material_name', 'material')} to {order.get('job_city', 'N/A')}")
+                order_dict = dict(order)  # Convert sqlite3.Row to dict for .get() support
+                context_parts.append(f"  - Order {order_dict['order_number']}: {order_dict.get('quantity_tons', 0)} tons {order_dict.get('material_name', 'material')} to {order_dict.get('job_city', 'N/A')}")
 
         context_parts.append(f"\nFLEET SUMMARY: {len(trucks)} active trucks, {len(drivers)} active drivers")
 
@@ -1459,6 +1461,9 @@ def ai_optimize_dispatch():
 
         if not order:
             continue
+
+        # Convert sqlite3.Row to dict for .get() support
+        order = dict(order)
 
         # Determine pickup and destination
         pickup = order['pickup_city'] or order['pickup_name'] or 'unknown'
