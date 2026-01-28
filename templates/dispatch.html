@@ -18,9 +18,15 @@
                 <h5 class="mb-0">
                     <i class="fas fa-bolt me-2 text-warning"></i>Batch Dispatch - Create 4-10 Loads per Driver
                 </h5>
-                <button class="btn btn-primary" onclick="showBatchDispatchModal()">
-                    <i class="fas fa-plus me-1"></i>Batch Create Loads
-                </button>
+                <div>
+                    <a href="{{ url_for('orders') }}" class="btn btn-outline-info me-2">
+                        <i class="fas fa-inbox me-1"></i>View Orders
+                        {% if pending_orders %}<span class="badge bg-danger">{{ pending_orders|length }}</span>{% endif %}
+                    </a>
+                    <button class="btn btn-primary" onclick="showBatchDispatchModal()">
+                        <i class="fas fa-plus me-1"></i>Batch Create Loads
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 <div class="alert alert-info">
@@ -55,12 +61,12 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between mb-2">
                         <small class="text-muted">Today's Loads</small>
-                        <small class="text-muted">{{ loads_by_assignment[assignment.driver_id]|length }} loads</small>
+                        {% set driver_loads = loads_by_assignment.get(assignment.driver_id, []) %}
+                        <small class="text-muted">{{ driver_loads|length }} loads</small>
                     </div>
-                    
+
                     <!-- Loads List -->
-                    <div class="loads-container">
-                        {% set driver_loads = loads_by_assignment[assignment.driver_id] %}
+                    <div class="loads-container" style="max-height: 300px; overflow-y: auto;">
                         {% if driver_loads %}
                             {% for load in driver_loads %}
                             <div class="load-item mb-2 p-2 rounded border" id="load-{{ load.id }}">
@@ -68,22 +74,19 @@
                                     <div>
                                         <small class="text-muted">#{{ load.load_number }}</small>
                                         <div class="fw-bold">{{ load.job_name }}</div>
-                                        <small>{{ load.product_type }} - {{ load.quantity_tons }} Tons</small>
-                                        {% if load.scheduled_time %}
-                                        <div class="text-muted small"><i class="far fa-clock me-1"></i>{{ load.scheduled_time }}</div>
-                                        {% endif %}
+                                        <small>{{ load.material_name or 'No material' }} - {{ load.quantity_tons }} Tons</small>
                                     </div>
                                     <div class="dropdown">
-                                        <button class="btn btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                            Status
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                            {{ load.status.replace('_', ' ').title() }}
                                         </button>
                                         <ul class="dropdown-menu">
-                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'assigned')">Assigned</a></li>
-                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'en_route')">En Route</a></li>
-                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'at_job')">At Job</a></li>
-                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'delivering')">Delivering</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'assigned'); return false;">Assigned</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'en_route'); return false;">En Route</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'at_job'); return false;">At Job</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'delivering'); return false;">Delivering</a></li>
                                             <li><hr class="dropdown-divider"></li>
-                                            <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'complete')">Complete</a></li>
+                                            <li><a class="dropdown-item text-success" href="#" onclick="updateLoadStatus({{ load.id }}, 'complete'); return false;">Complete</a></li>
                                         </ul>
                                     </div>
                                 </div>
@@ -110,7 +113,7 @@
                     </div>
                 </div>
                 <div class="card-footer bg-white">
-                    <button class="btn btn-sm btn-outline-primary w-100" onclick="showAddLoadModal({{ assignment.driver_id }}, {{ assignment.truck_id }}, {{ assignment.trailer_id or 'null' }})">
+                    <button class="btn btn-sm btn-outline-primary w-100" onclick="showAddLoadModal({{ assignment.id }}, {{ assignment.driver_id }}, {{ assignment.truck_id }}, {{ assignment.trailer_id or 'null' }})">
                         <i class="fas fa-plus me-1"></i>Add Single Load
                     </button>
                 </div>
@@ -155,8 +158,9 @@
                             <div id="driversList" class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
                                 {% for assignment in active_assignments %}
                                 <div class="form-check">
-                                    <input class="form-check-input driver-checkbox" type="checkbox" 
-                                           name="drivers" value="{{ assignment.driver_id }}"
+                                    <input class="form-check-input driver-checkbox" type="checkbox"
+                                           name="drivers" value="{{ assignment.id }}"
+                                           data-driver-id="{{ assignment.driver_id }}"
                                            data-truck-id="{{ assignment.truck_id }}"
                                            data-trailer-id="{{ assignment.trailer_id or '' }}" checked>
                                     <label class="form-check-label">
@@ -182,32 +186,43 @@
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Job</label>
-                                <select class="form-select" id="defaultJob">
+                                <select class="form-select" id="batchJobId" required>
+                                    <option value="">Select a job...</option>
                                     {% for job in jobs %}
-                                    <option value="{{ job.id }}">{{ job.job_name }} - {{ job.address }}</option>
+                                    <option value="{{ job.id }}">{{ job.job_name }} - {{ job.address or 'No address' }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Product Type</label>
-                                <select class="form-select" id="defaultProduct">
-                                    <option value="Ready Mix">Ready Mix</option>
-                                    <option value="Concrete">Concrete</option>
-                                    <option value="Gravel">Gravel</option>
-                                    <option value="Sand">Sand</option>
+                                <label class="form-label">Plant (Optional)</label>
+                                <select class="form-select" id="batchPlantId">
+                                    <option value="">Select plant...</option>
+                                    {% for plant in plants %}
+                                    <option value="{{ plant.id }}">{{ plant.name }} ({{ plant.city }}, {{ plant.state }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Pickup Location (Optional)</label>
+                                <select class="form-select" id="batchPickupId">
+                                    <option value="">Select pickup location...</option>
+                                    {% for loc in pickup_locations %}
+                                    <option value="{{ loc.id }}">{{ loc.name }} ({{ loc.company }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Material</label>
+                                <select class="form-select" id="batchMaterialId">
+                                    <option value="">Select material...</option>
+                                    {% for m in materials %}
+                                    <option value="{{ m.id }}">{{ m.name }}</option>
+                                    {% endfor %}
                                 </select>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Tons per Load</label>
-                                <input type="number" class="form-control" id="defaultTons" value="20" min="1" max="30">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Start Time</label>
-                                <input type="time" class="form-control" id="startTime" value="07:00">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Interval between loads (minutes)</label>
-                                <input type="number" class="form-control" id="intervalMinutes" value="45" min="15" max="180">
+                                <input type="number" class="form-control" id="batchTons" value="20" min="1" max="30">
                             </div>
                         </div>
                     </div>
@@ -232,30 +247,34 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="addLoadForm" method="POST" action="{{ url_for('loads') }}">
+                <form id="addLoadForm">
+                    <input type="hidden" id="loadAssignmentId" name="assignment_id">
                     <input type="hidden" id="loadDriverId" name="driver_id">
                     <input type="hidden" id="loadTruckId" name="truck_id">
                     <input type="hidden" id="loadTrailerId" name="trailer_id">
-                    
+
                     <div class="mb-3">
                         <label class="form-label">Job</label>
                         <select class="form-select" id="loadJobId" name="job_id" required>
+                            <option value="">Select a job...</option>
                             {% for job in jobs %}
                             <option value="{{ job.id }}">{{ job.job_name }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Plant</label>
-                        <select class="form-select" id="loadPlantId" name="plant_id" required>
+                        <label class="form-label">Plant (Optional)</label>
+                        <select class="form-select" id="loadPlantId" name="plant_id">
+                            <option value="">Select plant...</option>
                             {% for plant in plants %}
                             <option value="{{ plant.id }}">{{ plant.name }} ({{ plant.city }}, {{ plant.state }})</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Pickup Location</label>
-                        <select class="form-select" id="loadPickupLocationId" name="pickup_location_id" onchange="updateMaterialOptions()">
+                        <label class="form-label">Pickup Location (Optional)</label>
+                        <select class="form-select" id="loadPickupLocationId" name="pickup_location_id">
+                            <option value="">Select pickup location...</option>
                             {% for location in pickup_locations %}
                             <option value="{{ location.id }}">{{ location.name }} ({{ location.company }})</option>
                             {% endfor %}
@@ -263,26 +282,20 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Material</label>
-                        <select class="form-select" id="loadMaterialId" name="material_id" required>
-                            <option value="">Select pickup location first</option>
+                        <select class="form-select" id="loadMaterialId" name="material_id">
+                            <option value="">Select material...</option>
+                            {% for m in materials %}
+                            <option value="{{ m.id }}">{{ m.name }}</option>
+                            {% endfor %}
                         </select>
-                        <small class="text-muted" id="materialRestriction"></small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Product Type</label>
-                        <input type="text" class="form-control" name="product_type" value="Ready Mix" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Tons</label>
-                        <input type="number" class="form-control" name="quantity_tons" value="20" step="0.5" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Scheduled Time</label>
-                        <input type="time" class="form-control" name="scheduled_time">
+                        <input type="number" class="form-control" id="loadTons" name="quantity_tons" value="20" step="0.5" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Notes</label>
-                        <textarea class="form-control" name="notes" rows="2"></textarea>
+                        <textarea class="form-control" id="loadNotes" name="notes" rows="2"></textarea>
                     </div>
                 </form>
             </div>
@@ -298,14 +311,17 @@
 {% block scripts %}
 <script>
 function showBatchDispatchModal() {
-    $('#batchDispatchModal').modal('show');
+    const modal = new bootstrap.Modal(document.getElementById('batchDispatchModal'));
+    modal.show();
 }
 
-function showAddLoadModal(driverId, truckId, trailerId) {
-    $('#loadDriverId').val(driverId);
-    $('#loadTruckId').val(truckId);
-    $('#loadTrailerId').val(trailerId);
-    $('#addLoadModal').modal('show');
+function showAddLoadModal(assignmentId, driverId, truckId, trailerId) {
+    document.getElementById('loadAssignmentId').value = assignmentId;
+    document.getElementById('loadDriverId').value = driverId;
+    document.getElementById('loadTruckId').value = truckId;
+    document.getElementById('loadTrailerId').value = trailerId || '';
+    const modal = new bootstrap.Modal(document.getElementById('addLoadModal'));
+    modal.show();
 }
 
 function updateLoadStatus(loadId, status) {
@@ -320,17 +336,23 @@ function updateLoadStatus(loadId, status) {
     .then(data => {
         if (data.success) {
             location.reload();
+        } else {
+            alert('Failed to update status');
         }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to update status');
     });
 }
 
 function submitBatchDispatch() {
     const selectedDrivers = [];
-    $('.driver-checkbox:checked').each(function() {
+    document.querySelectorAll('.driver-checkbox:checked').forEach(function(checkbox) {
         selectedDrivers.push({
-            driver_id: $(this).val(),
-            truck_id: $(this).data('truck-id'),
-            trailer_id: $(this).data('trailer-id') || null,
+            driver_id: checkbox.dataset.driverId,
+            truck_id: checkbox.dataset.truckId,
+            trailer_id: checkbox.dataset.trailerId || null,
             loads: []
         });
     });
@@ -340,31 +362,28 @@ function submitBatchDispatch() {
         return;
     }
 
-    const loadsPerDriver = parseInt($('#loadsPerDriver').val());
-    const jobId = $('#defaultJob').val();
-    const productType = $('#defaultProduct').val();
-    const quantityTons = $('#quantityTons').val();
-    const startTime = $('#startTime').val();
-    const interval = parseInt($('#intervalMinutes').val());
+    const jobId = document.getElementById('batchJobId').value;
+    if (!jobId) {
+        alert('Please select a job');
+        return;
+    }
+
+    const loadsPerDriver = parseInt(document.getElementById('loadsPerDriver').value);
+    const plantId = document.getElementById('batchPlantId').value || null;
+    const pickupId = document.getElementById('batchPickupId').value || null;
+    const materialId = document.getElementById('batchMaterialId').value || null;
+    const quantityTons = parseFloat(document.getElementById('batchTons').value) || 20;
 
     // Create loads for each driver
-    selectedDrivers.forEach((driver, index) => {
-        let currentTime = startTime;
+    selectedDrivers.forEach(function(driver) {
         for (let i = 0; i < loadsPerDriver; i++) {
             driver.loads.push({
                 job_id: jobId,
-                product_type: productType,
-                quantity_tons: quantityTons,
-                scheduled_time: currentTime,
-                sequence: i + 1
+                plant_id: plantId,
+                pickup_location_id: pickupId,
+                material_id: materialId,
+                quantity_tons: quantityTons
             });
-
-            // Increment time
-            const [hours, minutes] = currentTime.split(':').map(Number);
-            const totalMinutes = hours * 60 + minutes + interval;
-            const newHours = Math.floor(totalMinutes / 60) % 24;
-            const newMinutes = totalMinutes % 60;
-            currentTime = `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}`;
         }
     });
 
@@ -378,83 +397,61 @@ function submitBatchDispatch() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            $('#batchDispatchModal').modal('hide');
+            alert(data.message);
             location.reload();
+        } else {
+            alert('Failed to create loads');
         }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to create loads');
+    });
+}
+
+function submitSingleLoad() {
+    const data = {
+        driver_id: document.getElementById('loadDriverId').value,
+        truck_id: document.getElementById('loadTruckId').value,
+        trailer_id: document.getElementById('loadTrailerId').value || null,
+        job_id: document.getElementById('loadJobId').value,
+        plant_id: document.getElementById('loadPlantId').value || null,
+        pickup_location_id: document.getElementById('loadPickupLocationId').value || null,
+        material_id: document.getElementById('loadMaterialId').value || null,
+        quantity_tons: parseFloat(document.getElementById('loadTons').value) || 20,
+        notes: document.getElementById('loadNotes').value || ''
+    };
+
+    if (!data.job_id) {
+        alert('Please select a job');
+        return;
+    }
+
+    fetch('/loads/add', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed to add load');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to add load');
     });
 }
 
 // Select all drivers functionality
-$('#selectAllDrivers').change(function() {
-    $('.driver-checkbox').prop('checked', $(this).prop('checked'));
-});
-
-// Material selection based on pickup location
-const locationMaterialsData = {
-    {% for lm in location_materials %}
-    "{{ lm.pickup_location_id }}": {
-        "{{ lm.material_code }}": {
-            "name": "{{ lm.material_name }}",
-            "id": "{{ lm.material_code }}",
-            "restriction": "{{ lm.restriction or '' }}"
-        }
-    }{% if not loop.last %},{% endif %}
-    {% endfor %}
-};
-
-const materialsData = {
-    {% for m in materials %}
-    "{{ m.code }}": "{{ m.id }}"{% if not loop.last %},{% endif %}
-    {% endfor %}
-};
-
-function updateMaterialOptions() {
-    const pickupLocationId = document.getElementById('loadPickupLocationId');
-    const materialSelect = document.getElementById('loadMaterialId');
-    const restrictionText = document.getElementById('materialRestriction');
-    
-    const selectedLocationId = pickupLocationId.value;
-    
-    // Clear current options
-    materialSelect.innerHTML = '<option value="">Select material</option>';
-    
-    // Get materials available at selected location
-    const locationMaterials = locationMaterialsData[selectedLocationId];
-    
-    if (locationMaterials) {
-        for (const [materialCode, materialData] of Object.entries(locationMaterials)) {
-            const option = document.createElement('option');
-            option.value = materialData.id;
-            option.textContent = materialData.name;
-            option.setAttribute('data-restriction', materialData.restriction);
-            materialSelect.appendChild(option);
-        }
-    } else {
-        materialSelect.innerHTML = '<option value="">No materials available</option>';
-    }
-    
-    // Clear restriction text
-    restrictionText.textContent = '';
-    
-    // Add change event listener for material selection
-    materialSelect.onchange = function() {
-        const selectedOption = materialSelect.options[materialSelect.selectedIndex];
-        const restriction = selectedOption.getAttribute('data-restriction');
-        
-        if (restriction) {
-            restrictionText.innerHTML = '<strong>⚠️ ' + restriction + '</strong>';
-            restrictionText.classList.add('text-warning');
-        } else {
-            restrictionText.textContent = '';
-            restrictionText.classList.remove('text-warning');
-        }
-    };
-}
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    updateMaterialOptions();
+document.getElementById('selectAllDrivers').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.driver-checkbox');
+    checkboxes.forEach(cb => cb.checked = this.checked);
 });
 </script>
 {% endblock %}
-<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
