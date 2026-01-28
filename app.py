@@ -1437,6 +1437,19 @@ def ai_optimize_dispatch():
         'message': f'Generated {len(recommendations)} smart recommendations with tonnage coverage'
     })
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Return JSON for any unhandled exception in API routes"""
+    import traceback
+    if request.path.startswith('/api/'):
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': f'Server error: {str(e)}'
+        }), 500
+    # Re-raise for non-API routes
+    raise e
+
 @app.route('/api/ai/apply-recommendation', methods=['POST'])
 def apply_ai_recommendation():
     """Apply an AI recommendation - assign the order to the recommended driver"""
