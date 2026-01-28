@@ -1623,7 +1623,8 @@ def ai_optimize_dispatch():
                 'primary_driver_name': primary['driver_name'],
                 'primary_truck_id': primary['truck_id'],
                 'primary_truck_number': primary['truck_number'],
-                'primary_tons_per_day': primary.get('tons_per_day', 80),
+                'primary_tons_per_day': primary.get('tons_per_day', 100),
+                'primary_capacity_tons': primary.get('capacity_tons', 25),
                 # All assigned trucks with load details
                 'assigned_trucks': [
                     {
@@ -1631,7 +1632,8 @@ def ai_optimize_dispatch():
                         'driver_name': t['driver_name'],
                         'truck_id': t['truck_id'],
                         'truck_number': t['truck_number'],
-                        'tons_per_day': t.get('tons_per_day', 80),
+                        'capacity_tons': t.get('capacity_tons', 25),
+                        'tons_per_day': t.get('tons_per_day', 100),
                         'contribution_tons': t.get('contribution_tons', 0),
                         'loads_needed': t.get('loads_needed', 1),
                         'is_partial_day': t.get('is_partial_day', False),
@@ -1644,7 +1646,9 @@ def ai_optimize_dispatch():
                 'plant_name': order.get('plant_name'),
                 'confidence': primary.get('confidence', 50),
                 'quality': primary.get('recommendation_quality', 'unknown'),
-                'reasoning': ' | '.join(reasoning_parts[:4])
+                'reasoning': ' | '.join(reasoning_parts[:4]),
+                # Estimated cost: $12/ton for local hauls (rough estimate)
+                'estimated_cost': round(tons_remaining * 12, 2)
             }
 
             recommendations.append(order_recommendation)

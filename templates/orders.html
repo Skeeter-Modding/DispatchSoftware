@@ -528,23 +528,34 @@ function runAIOptimization() {
 function showAIRecommendations(recommendations) {
     let html = '<div class="list-group">';
     recommendations.forEach(rec => {
+        // Build truck assignment summary
+        let truckSummary = '';
+        if (rec.assigned_trucks && rec.assigned_trucks.length > 0) {
+            rec.assigned_trucks.forEach(t => {
+                truckSummary += `${t.driver_name}: ${t.capacity_tons || 25}t (${t.loads_needed} loads)<br>`;
+            });
+        } else {
+            truckSummary = `${rec.primary_driver_name}: ${rec.primary_tons_per_day || 100}t/day`;
+        }
+
+        // Calculate estimated cost (rough: $12/ton for local hauls)
+        const estCost = rec.estimated_cost || Math.round(rec.tons_remaining * 12);
+
         html += `
             <div class="list-group-item">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <strong>Order ${rec.order_number}</strong><br>
                         <span class="text-muted">
-                            <i class="fas fa-user me-1"></i>${rec.driver_name} |
-                            <i class="fas fa-truck me-1"></i>${rec.truck_number} |
-                            <i class="fas fa-industry me-1"></i>${rec.plant_name}
+                            ${rec.material || 'Material'} | ${rec.pickup_location || 'Pickup'} | ${rec.destination || 'Destination'}
                         </span><br>
                         <small class="text-muted">${rec.reasoning}</small>
                     </div>
                     <div class="text-end">
-                        <span class="badge bg-success mb-1">${rec.confidence}% confidence</span><br>
-                        <span class="badge bg-info">$${rec.estimated_cost} est. cost</span><br>
-                        <button class="btn btn-sm btn-primary mt-2" onclick="applyRecommendation(${rec.order_id}, ${rec.driver_id}, ${rec.truck_id}, ${rec.plant_id})">
-                            <i class="fas fa-check me-1"></i>Apply
+                        <span class="badge bg-${rec.confidence >= 70 ? 'success' : rec.confidence >= 50 ? 'warning' : 'danger'} mb-1">${rec.confidence.toFixed(1)}% CONFIDENCE</span><br>
+                        <span class="badge bg-info mb-1">$${estCost.toLocaleString()} EST. COST</span><br>
+                        <button class="btn btn-sm btn-primary mt-1" onclick="applyRecommendation(${rec.order_id}, ${rec.primary_driver_id}, ${rec.primary_truck_id}, ${rec.plant_id || 'null'})">
+                            APPLY
                         </button>
                     </div>
                 </div>
