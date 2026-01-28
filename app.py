@@ -1437,13 +1437,17 @@ def ai_optimize_dispatch():
     driver_loads = {}
     driver_assigned_tons = {}
     for driver in available_drivers:
-        load_count = query_db('''
+        load_count_row = query_db('''
             SELECT COUNT(*) as count, COALESCE(SUM(quantity_tons), 0) as tons
             FROM loads_active
             WHERE driver_id = ? AND DATE(assigned_at) = ?
         ''', (driver['driver_id'], today), one=True)
-        driver_loads[str(driver['driver_id'])] = load_count['count']
-        driver_assigned_tons[str(driver['driver_id'])] = load_count['tons']
+        if load_count_row:
+            driver_loads[str(driver['driver_id'])] = load_count_row['count'] or 0
+            driver_assigned_tons[str(driver['driver_id'])] = load_count_row['tons'] or 0
+        else:
+            driver_loads[str(driver['driver_id'])] = 0
+            driver_assigned_tons[str(driver['driver_id'])] = 0
 
     for order_id in order_ids:
         order = query_db('''
@@ -1702,12 +1706,20 @@ def handle_exception(e):
 @app.route('/api/ai/apply-recommendation', methods=['POST'])
 def apply_ai_recommendation():
     """Apply an AI recommendation - assign the order to the recommended driver"""
-    data = request.get_json()
+    data = request.get_json() or {}
 
     order_id = data.get('order_id')
     driver_id = data.get('driver_id')
     truck_id = data.get('truck_id')
     plant_id = data.get('plant_id')
+
+    # Validate required fields
+    if not order_id:
+        return jsonify({'success': False, 'error': 'Missing order_id'}), 400
+    if not driver_id:
+        return jsonify({'success': False, 'error': 'Missing driver_id'}), 400
+    if not truck_id:
+        return jsonify({'success': False, 'error': 'Missing truck_id'}), 400
 
     # Get order details
     order_row = query_db('SELECT * FROM orders WHERE id = ?', (order_id,), one=True)
