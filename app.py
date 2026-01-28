@@ -2253,6 +2253,7 @@ def ensure_ai_tables_exist():
         ('avg_speed_empty_mph', 'REAL DEFAULT 55'),
         ('load_time_minutes', 'REAL DEFAULT 10'),
         ('unload_time_minutes', 'REAL DEFAULT 5'),
+        ('notes', 'TEXT'),
     ]
 
     for col_name, col_def in truck_ai_columns:
