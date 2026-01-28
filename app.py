@@ -61,23 +61,28 @@ def archive_load(load_id):
 
     # Get load data
     cur.execute("SELECT * FROM loads_active WHERE id = ?", (load_id,))
-    load = cur.fetchone()
+    load_row = cur.fetchone()
 
-    if load:
-        # Insert into loads_history
+    if load_row:
+        # Convert Row to dict for easier access
+        load = dict(load_row)
+
+        # Insert into loads_history (including order_id)
         cur.execute('''
             INSERT INTO loads_history (
-                load_number, driver_id, truck_id, trailer_id, assignment_id,
+                load_number, order_id, driver_id, truck_id, trailer_id, assignment_id,
                 job_id, plant_id, pickup_location_id, material_id, quantity_tons,
                 status, assigned_at, en_route_at, at_job_at, delivering_at,
                 completed_at, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            load['load_number'], load['driver_id'], load['truck_id'], load['trailer_id'],
-            load['assignment_id'], load['job_id'], load['plant_id'], load['pickup_location_id'],
-            load['material_id'], load['quantity_tons'], load['status'], load['assigned_at'],
-            load['en_route_at'], load['at_job_at'], load['delivering_at'], load['completed_at'],
-            load['notes'], load['created_at'], load['updated_at']
+            load.get('load_number'), load.get('order_id'), load.get('driver_id'),
+            load.get('truck_id'), load.get('trailer_id'), load.get('assignment_id'),
+            load.get('job_id'), load.get('plant_id'), load.get('pickup_location_id'),
+            load.get('material_id'), load.get('quantity_tons'), load.get('status'),
+            load.get('assigned_at'), load.get('en_route_at'), load.get('at_job_at'),
+            load.get('delivering_at'), load.get('completed_at'), load.get('notes'),
+            load.get('created_at'), load.get('updated_at')
         ))
 
         # Delete from loads_active
@@ -86,7 +91,7 @@ def archive_load(load_id):
         # Update order fulfillment if load has an order_id
         order_id = load.get('order_id')
         if order_id:
-            tons = load['quantity_tons'] or 20.0
+            tons = load.get('quantity_tons') or 20.0
             cur.execute('''
                 UPDATE orders SET
                     tons_delivered = COALESCE(tons_delivered, 0) + ?,
@@ -1310,10 +1315,17 @@ def ai_optimize_dispatch():
             contribution = min(available_capacity, tons_remaining - coverage_tons)
             coverage_tons += contribution
 
+            # Calculate loads needed for this truck's contribution
+            capacity_per_load = truck.get('capacity_tons') or 22
+            loads_needed = max(1, int((contribution + capacity_per_load - 1) / capacity_per_load))
+            is_partial_day = contribution < (truck_daily_capacity * 0.8)  # Less than 80% = partial day
+
             assigned_trucks.append({
                 **truck,
                 'contribution_tons': round(contribution, 1),
-                'available_capacity': round(available_capacity, 1)
+                'available_capacity': round(available_capacity, 1),
+                'loads_needed': loads_needed,
+                'is_partial_day': is_partial_day
             })
 
         # Calculate trucks needed
@@ -1331,13 +1343,20 @@ def ai_optimize_dispatch():
 
             reasoning_parts = []
             reasoning_parts.append(f"Order: {total_quantity:.0f} tons, Remaining: {tons_remaining:.0f} tons")
-            reasoning_parts.append(f"Needs {trucks_needed} truck(s) to cover")
 
             if len(assigned_trucks) > 1:
-                truck_names = [t['driver_name'] for t in assigned_trucks[:3]]
-                reasoning_parts.append(f"Assigned: {', '.join(truck_names)}")
+                # Show truck breakdown with loads
+                full_day_trucks = [t for t in assigned_trucks if not t.get('is_partial_day')]
+                partial_trucks = [t for t in assigned_trucks if t.get('is_partial_day')]
+
+                if full_day_trucks:
+                    reasoning_parts.append(f"{len(full_day_trucks)} full day truck(s)")
+                if partial_trucks:
+                    for pt in partial_trucks:
+                        reasoning_parts.append(f"{pt['driver_name']}: {pt.get('contribution_tons', 0):.0f}t ({pt.get('loads_needed', 1)} loads)")
             else:
-                reasoning_parts.append(f"{primary['driver_name']} can do {primary.get('tons_per_day', 80):.0f} tons/day")
+                loads = primary.get('loads_needed', int(tons_remaining / 22) + 1)
+                reasoning_parts.append(f"{primary['driver_name']}: {loads} loads ({primary.get('tons_per_day', 80):.0f}t/day capacity)")
 
             order_recommendation = {
                 'order_id': order_id,
@@ -1360,7 +1379,7 @@ def ai_optimize_dispatch():
                 'primary_truck_id': primary['truck_id'],
                 'primary_truck_number': primary['truck_number'],
                 'primary_tons_per_day': primary.get('tons_per_day', 80),
-                # All assigned trucks
+                # All assigned trucks with load details
                 'assigned_trucks': [
                     {
                         'driver_id': t['driver_id'],
@@ -1369,6 +1388,8 @@ def ai_optimize_dispatch():
                         'truck_number': t['truck_number'],
                         'tons_per_day': t.get('tons_per_day', 80),
                         'contribution_tons': t.get('contribution_tons', 0),
+                        'loads_needed': t.get('loads_needed', 1),
+                        'is_partial_day': t.get('is_partial_day', False),
                         'score': t.get('total_score', 50)
                     }
                     for t in assigned_trucks
