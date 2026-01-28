@@ -4,7 +4,7 @@
 <div class="row mb-4">
     <div class="col-12">
         <h1 class="h3 mb-3">
-            <i class="fas fa-satellite-dish me-2 text-primary"></i>Samara Integration - Auto Tracking
+            <i class="fas fa-satellite-dish me-2 text-primary"></i>Samsara Integration - Auto Tracking
         </h1>
     </div>
 </div>
@@ -30,7 +30,7 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="text-uppercase mb-1">Samara Devices</h6>
+                        <h6 class="text-uppercase mb-1">Samsara Devices</h6>
                         <h2 class="mb-0">{{ loads|selectattr('samara_device_id')|list|length }}</h2>
                     </div>
                     <div class="icon">
@@ -63,11 +63,11 @@
         <div class="card">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
-                    <i class="fas fa-plug me-2"></i>Samara Integration Status
+                    <i class="fas fa-plug me-2"></i>Samsara Integration Status
                 </h5>
                 <div>
                     <span class="badge bg-success me-2"><i class="fas fa-circle me-1"></i>Connected</span>
-                    <button class="btn btn-primary btn-sm" onclick="syncSamara()">
+                    <button class="btn btn-primary btn-sm" onclick="syncSamsara()">
                         <i class="fas fa-sync me-1"></i>Sync Now
                     </button>
                 </div>
@@ -75,7 +75,7 @@
             <div class="card-body">
                 <div class="alert alert-info">
                     <i class="fas fa-info-circle me-2"></i>
-                    <strong>Automatic Tracking Enabled:</strong> Loads from trucks with Samara devices are automatically tracked. Status updates are synchronized based on GPS location and predefined geofences.
+                    <strong>Automatic Tracking Enabled:</strong> Loads from trucks with Samsara devices are automatically tracked. Status updates are synchronized based on GPS location and predefined geofences.
                 </div>
                 
                 <div class="row">
@@ -146,7 +146,7 @@
                                 <th>Load #</th>
                                 <th>Driver</th>
                                 <th>Truck</th>
-                                <th>Samara Device</th>
+                                <th>Samsara Device</th>
                                 <th>Job</th>
                                 <th>Status</th>
                                 <th>Last Update</th>
@@ -203,9 +203,9 @@
                 {% else %}
                 <div class="text-center text-muted py-4">
                     <i class="fas fa-satellite-dish fa-3x mb-3"></i>
-                    <p>No loads with Samara tracking enabled</p>
+                    <p>No loads with Samsara tracking enabled</p>
                     <a href="{{ url_for('trucks') }}" class="btn btn-primary btn-sm">
-                        <i class="fas fa-plus me-1"></i>Add Samara Devices to Trucks
+                        <i class="fas fa-plus me-1"></i>Add Samsara Devices to Trucks
                     </a>
                 </div>
                 {% endif %}
@@ -241,8 +241,8 @@
 <script>
 let updateCount = 0;
 
-function syncSamara() {
-    // Simulate Samara sync
+function syncSamsara() {
+    // Simulate Samsara sync
     const btn = event.target;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Syncing...';
@@ -252,7 +252,7 @@ function syncSamara() {
         btn.innerHTML = '<i class="fas fa-sync me-1"></i>Sync Now';
         updateCount += Math.floor(Math.random() * 5) + 1;
         document.getElementById('updateCount').textContent = updateCount;
-        alert('Samara sync completed! ' + updateCount + ' status updates received.');
+        alert('Samsara sync completed! ' + updateCount + ' status updates received.');
     }, 2000);
 }
 
@@ -265,7 +265,7 @@ function viewLocation(deviceId) {
 
 // Auto-sync every 5 minutes
 setInterval(() => {
-    console.log('Auto-syncing with Samara...');
+    console.log('Auto-syncing with Samsara...');
     updateCount += Math.floor(Math.random() * 3);
     document.getElementById('updateCount').textContent = updateCount;
 }, 300000);

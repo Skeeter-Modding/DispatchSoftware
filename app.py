@@ -1204,10 +1204,10 @@ CURRENT OPERATIONS CONTEXT:
             'response': f'Error processing request: {str(e)}'
         })
 
-@app.route('/samara/integration')
-def samara_integration():
+@app.route('/samsara/integration')
+def samsara_integration():
     """Samsara GPS integration page"""
-    return render_template('samara.html')
+    return render_template('samsara.html')
 
 # ============ DRIVER-TRUCK AUTO-ASSIGNMENT ============
 
@@ -1412,11 +1412,13 @@ def ai_optimize_dispatch():
     today = datetime.date.today()
 
     # Get today's available drivers with their current load counts
+    # Include trailer_id to determine capacity: 25 tons with trailer, 18 tons tandem (no trailer)
     available_drivers = query_db('''
         SELECT a.*, d.name as driver_name, d.home_city as driver_home_city,
                d.home_location as driver_home_location,
                t.truck_number, t.id as truck_id,
-               t.capacity_tons, t.truck_type, t.truck_name, t.home_city as truck_home_city
+               t.capacity_tons, t.truck_type, t.truck_name, t.home_city as truck_home_city,
+               a.trailer_id
         FROM assignments a
         JOIN drivers d ON a.driver_id = d.id
         JOIN trucks t ON a.truck_id = t.id
@@ -1479,6 +1481,17 @@ def ai_optimize_dispatch():
         # Score all available trucks/drivers
         truck_scores = []
         for driver in available_drivers:
+            # Determine capacity based on trailer: 25 tons with trailer, 18 tons tandem (no trailer)
+            has_trailer = driver['trailer_id'] is not None
+            capacity_tons = 25 if has_trailer else 18
+
+            # Skip lowboy drivers for aggregate orders (Glen Goodno, Joe Sargent, etc.)
+            truck_type = (driver['truck_type'] or '').lower()
+            driver_name_lower = driver['driver_name'].lower() if driver['driver_name'] else ''
+            is_lowboy_driver = 'lowboy' in truck_type or 'glen goodno' in driver_name_lower or 'joe sargent' in driver_name_lower
+            if is_lowboy_driver:
+                continue  # Skip lowboy drivers for aggregate hauling
+
             try:
                 score = ai_engine.score_assignment(
                     truck_id=str(driver['truck_id']),
@@ -1486,14 +1499,16 @@ def ai_optimize_dispatch():
                     pickup=pickup,
                     destination=destination,
                     material=material,
-                    quantity=min(tons_remaining, driver['capacity_tons'] or 22),
+                    quantity=min(tons_remaining, capacity_tons),
                     current_loads=driver_loads.get(str(driver['driver_id']), 0),
                     all_loads=driver_loads
                 )
 
                 # Get productivity estimate for this truck on this route
                 productivity = score.get('productivity', {})
-                tons_per_day = productivity.get('tons_per_day', 0) or 80  # Default if calc fails
+                # Calculate tons per day based on loads per day (4 loads) * capacity
+                loads_per_day = productivity.get('loads_per_day', 4) or 4
+                tons_per_day = loads_per_day * capacity_tons
 
                 truck_scores.append({
                     'driver_id': driver['driver_id'],
@@ -1501,7 +1516,8 @@ def ai_optimize_dispatch():
                     'truck_id': driver['truck_id'],
                     'truck_number': driver['truck_number'],
                     'truck_name': driver['truck_name'] or driver['truck_number'],
-                    'capacity_tons': driver['capacity_tons'] or 22,
+                    'capacity_tons': capacity_tons,
+                    'has_trailer': has_trailer,
                     'tons_per_day': tons_per_day,
                     'already_assigned_tons': driver_assigned_tons.get(str(driver['driver_id']), 0),
                     **score
@@ -1512,12 +1528,13 @@ def ai_optimize_dispatch():
                     'driver_name': driver['driver_name'],
                     'truck_id': driver['truck_id'],
                     'truck_number': driver['truck_number'],
-                    'capacity_tons': driver['capacity_tons'] or 22,
-                    'tons_per_day': 80,
+                    'capacity_tons': capacity_tons,
+                    'has_trailer': has_trailer,
+                    'tons_per_day': 4 * capacity_tons,  # 4 loads per day default
                     'total_score': 50.0,
                     'confidence': 50.0,
                     'reasoning': [f'Fallback score: {str(e)[:50]}'],
-                    'productivity': {'tons_per_day': 80, 'loads_per_day': 4}
+                    'productivity': {'tons_per_day': 4 * capacity_tons, 'loads_per_day': 4}
                 })
 
         # Sort by score
