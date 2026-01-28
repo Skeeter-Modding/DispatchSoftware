@@ -385,16 +385,18 @@ function showAssignOrderModal(orderId, orderNumber) {
     document.getElementById('assignOrderId').value = orderId;
     document.getElementById('assignOrderNumber').textContent = orderNumber;
 
-    // Populate drivers from today's assignments
+    // Populate drivers from today's assignments (already loaded in assignmentsData)
     const driverSelect = document.getElementById('assignDriverId');
     driverSelect.innerHTML = '<option value="">Select driver...</option>';
 
-    // Fetch today's assignments
-    fetch('/assignments')
-    .then(() => {
-        // For now, we'll need to get this data from the page or an API
-        // This is a simplified version
-    });
+    if (assignmentsData && assignmentsData.length > 0) {
+        assignmentsData.forEach(function(assignment) {
+            const option = document.createElement('option');
+            option.value = assignment.driver_id;
+            option.textContent = `${assignment.driver_name} (Truck ${assignment.truck_number})`;
+            driverSelect.appendChild(option);
+        });
+    }
 
     const modal = new bootstrap.Modal(document.getElementById('assignOrderModal'));
     modal.show();
