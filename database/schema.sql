@@ -1,16 +1,63 @@
 -- Smyrna Ready Mix Dispatch System Database Schema
 
--- Drivers Table
+-- Drivers Table (Enhanced for AI Dispatch)
 CREATE TABLE IF NOT EXISTS drivers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     phone TEXT,
     email TEXT,
     employee_id TEXT UNIQUE,
+    -- AI Knowledge Fields
+    home_location TEXT,                   -- Plant name where driver parks
+    home_city TEXT,                       -- City for distance calculations
     status TEXT DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Pickup Locations Table (Quarries, suppliers, etc.)
+CREATE TABLE IF NOT EXISTS pickup_locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    supplier_name TEXT,
+    address TEXT,
+    city TEXT,
+    state TEXT DEFAULT 'GA',
+    zip TEXT,
+    latitude REAL,
+    longitude REAL,
+    phone TEXT,
+    contact_name TEXT,
+    material_types TEXT,                  -- JSON array of available materials
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Material Types Table
+CREATE TABLE IF NOT EXISTS material_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,            -- e.g., '57', '89', 'SAND'
+    name TEXT NOT NULL,
+    category TEXT,                        -- 'stone', 'sand', 'gravel', 'fill'
+    density_tons_per_cy REAL DEFAULT 1.4, -- Tons per cubic yard
+    typical_load_tons REAL DEFAULT 22,
+    notes TEXT,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default material types
+INSERT OR IGNORE INTO material_types (code, name, category, density_tons_per_cy, typical_load_tons) VALUES
+    ('57', '#57 Stone', 'stone', 1.4, 22),
+    ('67', '#67 Stone', 'stone', 1.4, 22),
+    ('89', '#89 Stone', 'stone', 1.5, 23),
+    ('4', '#4 Stone', 'stone', 1.3, 21),
+    ('SAND', 'Concrete Sand', 'sand', 1.35, 24),
+    ('MSAND', 'Mason Sand', 'sand', 1.35, 24),
+    ('GAB', 'Graded Aggregate Base', 'gravel', 1.5, 23),
+    ('FILL', 'Fill Dirt', 'fill', 1.2, 20),
+    ('RAP', 'Recycled Asphalt', 'gravel', 1.4, 22);
 
 -- Trucks Table (Enhanced for AI Dispatch)
 CREATE TABLE IF NOT EXISTS trucks (
@@ -152,6 +199,137 @@ CREATE TABLE IF NOT EXISTS dispatch_templates (
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 
+-- ============================================================================
+-- ORDERS AND ACTIVE LOADS TABLES
+-- ============================================================================
+
+-- Orders Table (Customer orders with tonnage tracking)
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_number TEXT UNIQUE,
+    job_id INTEGER,
+    plant_id INTEGER,                     -- Delivery destination plant
+    pickup_location_id INTEGER,           -- Where to pick up material
+    material_id INTEGER,
+    quantity_tons REAL NOT NULL,          -- Total tons ordered
+    -- Fulfillment tracking
+    tons_delivered REAL DEFAULT 0,        -- Tons delivered so far
+    tons_remaining REAL,                  -- Auto-calculated remaining
+    loads_assigned INTEGER DEFAULT 0,     -- Number of loads assigned
+    loads_completed INTEGER DEFAULT 0,    -- Number of loads completed
+    estimated_trucks_needed INTEGER,      -- AI estimate of trucks needed
+    -- Schedule and status
+    requested_date DATE,
+    requested_time TIME,
+    priority TEXT DEFAULT 'normal',       -- 'urgent', 'high', 'normal', 'low'
+    status TEXT DEFAULT 'pending',        -- 'pending', 'in_progress', 'delivered', 'cancelled'
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (job_id) REFERENCES jobs(id),
+    FOREIGN KEY (plant_id) REFERENCES plants(id),
+    FOREIGN KEY (pickup_location_id) REFERENCES pickup_locations(id),
+    FOREIGN KEY (material_id) REFERENCES material_types(id)
+);
+
+-- Active Loads Table (Currently in progress)
+CREATE TABLE IF NOT EXISTS loads_active (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    load_number TEXT NOT NULL,
+    order_id INTEGER,                     -- Link to parent order for fulfillment tracking
+    driver_id INTEGER NOT NULL,
+    truck_id INTEGER NOT NULL,
+    trailer_id INTEGER,
+    assignment_id INTEGER,
+    job_id INTEGER,
+    plant_id INTEGER,
+    pickup_location_id INTEGER,
+    material_id INTEGER,
+    quantity_tons REAL DEFAULT 22,
+    status TEXT DEFAULT 'assigned',       -- assigned, en_route, at_job, delivering, complete
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    en_route_at TIMESTAMP,
+    at_job_at TIMESTAMP,
+    delivering_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (driver_id) REFERENCES drivers(id),
+    FOREIGN KEY (truck_id) REFERENCES trucks(id),
+    FOREIGN KEY (trailer_id) REFERENCES trailers(id),
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id),
+    FOREIGN KEY (job_id) REFERENCES jobs(id),
+    FOREIGN KEY (plant_id) REFERENCES plants(id),
+    FOREIGN KEY (pickup_location_id) REFERENCES pickup_locations(id),
+    FOREIGN KEY (material_id) REFERENCES material_types(id)
+);
+
+-- Load History Table (Completed/archived loads)
+CREATE TABLE IF NOT EXISTS loads_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    load_number TEXT NOT NULL,
+    order_id INTEGER,
+    driver_id INTEGER NOT NULL,
+    truck_id INTEGER NOT NULL,
+    trailer_id INTEGER,
+    assignment_id INTEGER,
+    job_id INTEGER,
+    plant_id INTEGER,
+    pickup_location_id INTEGER,
+    material_id INTEGER,
+    quantity_tons REAL,
+    status TEXT,
+    assigned_at TIMESTAMP,
+    en_route_at TIMESTAMP,
+    at_job_at TIMESTAMP,
+    delivering_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    notes TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Daily Driver Summary (For productivity tracking)
+CREATE TABLE IF NOT EXISTS daily_driver_summary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    driver_id INTEGER NOT NULL,
+    summary_date DATE NOT NULL,
+    total_loads INTEGER DEFAULT 0,
+    total_tons REAL DEFAULT 0,
+    total_miles REAL DEFAULT 0,
+    hours_worked REAL DEFAULT 0,
+    efficiency_score REAL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (driver_id) REFERENCES drivers(id),
+    UNIQUE(driver_id, summary_date)
+);
+
+-- AI Recommendations Table (Stores AI dispatch suggestions)
+CREATE TABLE IF NOT EXISTS ai_recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER,
+    recommended_driver_id INTEGER,
+    recommended_truck_id INTEGER,
+    recommended_plant_id INTEGER,
+    estimated_distance_miles REAL,
+    estimated_time_minutes REAL,
+    estimated_fuel_cost REAL,
+    estimated_profit REAL,
+    confidence_score REAL,
+    reasoning TEXT,
+    was_accepted BOOLEAN,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (recommended_driver_id) REFERENCES drivers(id),
+    FOREIGN KEY (recommended_truck_id) REFERENCES trucks(id),
+    FOREIGN KEY (recommended_plant_id) REFERENCES plants(id)
+);
+
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_loads_driver ON loads(driver_id);
 CREATE INDEX IF NOT EXISTS idx_loads_date ON loads(load_date);
@@ -159,6 +337,17 @@ CREATE INDEX IF NOT EXISTS idx_loads_status ON loads(status);
 CREATE INDEX IF NOT EXISTS idx_assignments_driver ON assignments(driver_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_date ON assignments(assigned_date);
 CREATE INDEX IF NOT EXISTS idx_tracking_load ON tracking_events(load_id);
+
+-- Indexes for new tables
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(requested_date);
+CREATE INDEX IF NOT EXISTS idx_loads_active_driver ON loads_active(driver_id);
+CREATE INDEX IF NOT EXISTS idx_loads_active_status ON loads_active(status);
+CREATE INDEX IF NOT EXISTS idx_loads_active_order ON loads_active(order_id);
+CREATE INDEX IF NOT EXISTS idx_loads_history_driver ON loads_history(driver_id);
+CREATE INDEX IF NOT EXISTS idx_loads_history_date ON loads_history(assigned_at);
+CREATE INDEX IF NOT EXISTS idx_daily_summary_driver ON daily_driver_summary(driver_id);
+CREATE INDEX IF NOT EXISTS idx_daily_summary_date ON daily_driver_summary(summary_date);
 
 -- ============================================================================
 -- AI DISPATCH KNOWLEDGE TABLES

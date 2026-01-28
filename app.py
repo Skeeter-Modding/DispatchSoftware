@@ -55,33 +55,55 @@ def query_db(query, args=(), one=False, commit=False):
     return result
 
 def archive_load(load_id):
-    """Move completed load from loads_active to loads_history"""
+    """Move completed load from loads_active to loads_history and update order fulfillment"""
     conn = get_db()
     cur = conn.cursor()
 
     # Get load data
     cur.execute("SELECT * FROM loads_active WHERE id = ?", (load_id,))
-    load = cur.fetchone()
+    load_row = cur.fetchone()
 
-    if load:
-        # Insert into loads_history
+    if load_row:
+        # Convert Row to dict for easier access
+        load = dict(load_row)
+
+        # Insert into loads_history (including order_id)
         cur.execute('''
             INSERT INTO loads_history (
-                load_number, driver_id, truck_id, trailer_id, assignment_id,
+                load_number, order_id, driver_id, truck_id, trailer_id, assignment_id,
                 job_id, plant_id, pickup_location_id, material_id, quantity_tons,
                 status, assigned_at, en_route_at, at_job_at, delivering_at,
                 completed_at, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            load['load_number'], load['driver_id'], load['truck_id'], load['trailer_id'],
-            load['assignment_id'], load['job_id'], load['plant_id'], load['pickup_location_id'],
-            load['material_id'], load['quantity_tons'], load['status'], load['assigned_at'],
-            load['en_route_at'], load['at_job_at'], load['delivering_at'], load['completed_at'],
-            load['notes'], load['created_at'], load['updated_at']
+            load.get('load_number'), load.get('order_id'), load.get('driver_id'),
+            load.get('truck_id'), load.get('trailer_id'), load.get('assignment_id'),
+            load.get('job_id'), load.get('plant_id'), load.get('pickup_location_id'),
+            load.get('material_id'), load.get('quantity_tons'), load.get('status'),
+            load.get('assigned_at'), load.get('en_route_at'), load.get('at_job_at'),
+            load.get('delivering_at'), load.get('completed_at'), load.get('notes'),
+            load.get('created_at'), load.get('updated_at')
         ))
 
         # Delete from loads_active
         cur.execute("DELETE FROM loads_active WHERE id = ?", (load_id,))
+
+        # Update order fulfillment if load has an order_id
+        order_id = load.get('order_id')
+        if order_id:
+            tons = load.get('quantity_tons') or 20.0
+            cur.execute('''
+                UPDATE orders SET
+                    tons_delivered = COALESCE(tons_delivered, 0) + ?,
+                    loads_completed = COALESCE(loads_completed, 0) + 1,
+                    tons_remaining = COALESCE(quantity_tons, 0) - COALESCE(tons_delivered, 0) - ?,
+                    status = CASE
+                        WHEN COALESCE(tons_delivered, 0) + ? >= COALESCE(quantity_tons, 0) THEN 'delivered'
+                        ELSE 'in_progress'
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (tons, tons, tons, order_id))
 
         # Update daily summary - parse date from string
         assigned_at = load['assigned_at']
@@ -778,20 +800,37 @@ def driver_daily_summary(driver_id, date):
 
 @app.route('/orders')
 def orders():
-    """Orders management page - orders that haven't been assigned to drivers yet"""
-    status_filter = request.args.get('status', 'pending')
+    """Orders management page - shows ALL orders until fully delivered"""
+    status_filter = request.args.get('status', 'all')  # Default to ALL orders
     today = datetime.date.today()
 
-    orders_list = query_db('''
-        SELECT o.*, j.job_name, j.address as job_address, j.city as job_city,
-               m.name as material_name, p.name as plant_name
-        FROM orders o
-        LEFT JOIN jobs j ON o.job_id = j.id
-        LEFT JOIN material_types m ON o.material_id = m.id
-        LEFT JOIN plants p ON o.plant_id = p.id
-        WHERE o.status = ? OR ? = 'all'
-        ORDER BY o.priority DESC, o.created_at ASC
-    ''', (status_filter, status_filter))
+    # Show all orders by default - they should persist until fully delivered
+    if status_filter == 'all':
+        orders_list = query_db('''
+            SELECT o.*, j.job_name, j.address as job_address, j.city as job_city,
+                   m.name as material_name, p.name as plant_name,
+                   COALESCE(o.tons_delivered, 0) as tons_delivered,
+                   COALESCE(o.quantity_tons, 20) as quantity_tons
+            FROM orders o
+            LEFT JOIN jobs j ON o.job_id = j.id
+            LEFT JOIN material_types m ON o.material_id = m.id
+            LEFT JOIN plants p ON o.plant_id = p.id
+            WHERE o.status != 'delivered'
+            ORDER BY o.priority DESC, o.created_at ASC
+        ''')
+    else:
+        orders_list = query_db('''
+            SELECT o.*, j.job_name, j.address as job_address, j.city as job_city,
+                   m.name as material_name, p.name as plant_name,
+                   COALESCE(o.tons_delivered, 0) as tons_delivered,
+                   COALESCE(o.quantity_tons, 20) as quantity_tons
+            FROM orders o
+            LEFT JOIN jobs j ON o.job_id = j.id
+            LEFT JOIN material_types m ON o.material_id = m.id
+            LEFT JOIN plants p ON o.plant_id = p.id
+            WHERE o.status = ?
+            ORDER BY o.priority DESC, o.created_at ASC
+        ''', (status_filter,))
 
     # Get data for forms
     jobs = query_db('SELECT * FROM jobs WHERE status="active" ORDER BY job_name')
@@ -1117,15 +1156,23 @@ def ai_optimize_dispatch():
     """
     Enhanced AI optimization endpoint - uses smart scoring engine
     Considers: productivity, cost efficiency, truck suitability,
-    deadhead distance, workload balance, and constraints
+    deadhead distance, workload balance, and constraints.
+
+    KEY FEATURE: Automatically splits large orders across multiple trucks
+    based on each truck's daily tonnage capacity for the route.
+    Example: 250 tons to Brunswick needs 3 trucks at ~100 tons/day each.
     """
     global ai_engine
     data = request.get_json() or {}
     order_ids = data.get('order_ids', [])
 
     if not order_ids:
-        # Get all pending orders
-        pending = query_db('SELECT id FROM orders WHERE status = "pending"')
+        # Get all orders that need coverage (pending or in_progress with remaining tons)
+        pending = query_db('''
+            SELECT id FROM orders
+            WHERE status IN ('pending', 'in_progress')
+            AND (COALESCE(tons_delivered, 0) < COALESCE(quantity_tons, 20))
+        ''')
         order_ids = [o['id'] for o in pending]
 
     if not order_ids:
@@ -1140,7 +1187,6 @@ def ai_optimize_dispatch():
     today = datetime.date.today()
 
     # Get today's available drivers with their current load counts
-    # Include driver home location for deadhead calculations
     available_drivers = query_db('''
         SELECT a.*, d.name as driver_name, d.home_city as driver_home_city,
                d.home_location as driver_home_location,
@@ -1160,25 +1206,26 @@ def ai_optimize_dispatch():
             'message': 'No available drivers with assignments today'
         })
 
-    # Build driver load counts for workload balancing
+    # Build driver load counts and assigned tons for workload balancing
     driver_loads = {}
+    driver_assigned_tons = {}
     for driver in available_drivers:
         load_count = query_db('''
-            SELECT COUNT(*) as count FROM loads_active
+            SELECT COUNT(*) as count, COALESCE(SUM(quantity_tons), 0) as tons
+            FROM loads_active
             WHERE driver_id = ? AND DATE(assigned_at) = ?
-        ''', (driver['driver_id'], today), one=True)['count']
-        driver_loads[str(driver['driver_id'])] = load_count
-
-    # Get pickup locations and plants
-    pickup_locations = query_db('SELECT * FROM pickup_locations WHERE status = "active"')
-    plants = query_db('SELECT * FROM plants WHERE status = "active"')
+        ''', (driver['driver_id'], today), one=True)
+        driver_loads[str(driver['driver_id'])] = load_count['count']
+        driver_assigned_tons[str(driver['driver_id'])] = load_count['tons']
 
     for order_id in order_ids:
         order = query_db('''
             SELECT o.*, j.city as job_city, j.state as job_state, j.job_name,
                    m.code as material_code, m.name as material_name,
                    pl.name as pickup_name, pl.city as pickup_city,
-                   p.name as plant_name, p.city as plant_city
+                   p.name as plant_name, p.city as plant_city,
+                   COALESCE(o.tons_delivered, 0) as tons_delivered,
+                   COALESCE(o.loads_assigned, 0) as loads_assigned
             FROM orders o
             LEFT JOIN jobs j ON o.job_id = j.id
             LEFT JOIN material_types m ON o.material_id = m.id
@@ -1194,7 +1241,12 @@ def ai_optimize_dispatch():
         pickup = order['pickup_city'] or order['pickup_name'] or 'unknown'
         destination = order['plant_city'] or order['job_city'] or 'unknown'
         material = order['material_code'] or '57'
-        quantity = order['quantity_tons'] or 20.0
+        total_quantity = order['quantity_tons'] or 20.0
+        tons_delivered = order['tons_delivered'] or 0
+        tons_remaining = total_quantity - tons_delivered
+
+        if tons_remaining <= 0:
+            continue  # Order already fulfilled
 
         # Score all available trucks/drivers
         truck_scores = []
@@ -1206,10 +1258,14 @@ def ai_optimize_dispatch():
                     pickup=pickup,
                     destination=destination,
                     material=material,
-                    quantity=quantity,
+                    quantity=min(tons_remaining, driver['capacity_tons'] or 22),
                     current_loads=driver_loads.get(str(driver['driver_id']), 0),
                     all_loads=driver_loads
                 )
+
+                # Get productivity estimate for this truck on this route
+                productivity = score.get('productivity', {})
+                tons_per_day = productivity.get('tons_per_day', 0) or 80  # Default if calc fails
 
                 truck_scores.append({
                     'driver_id': driver['driver_id'],
@@ -1217,61 +1273,142 @@ def ai_optimize_dispatch():
                     'truck_id': driver['truck_id'],
                     'truck_number': driver['truck_number'],
                     'truck_name': driver['truck_name'] or driver['truck_number'],
+                    'capacity_tons': driver['capacity_tons'] or 22,
+                    'tons_per_day': tons_per_day,
+                    'already_assigned_tons': driver_assigned_tons.get(str(driver['driver_id']), 0),
                     **score
                 })
             except Exception as e:
-                # Fallback if scoring fails
                 truck_scores.append({
                     'driver_id': driver['driver_id'],
                     'driver_name': driver['driver_name'],
                     'truck_id': driver['truck_id'],
                     'truck_number': driver['truck_number'],
+                    'capacity_tons': driver['capacity_tons'] or 22,
+                    'tons_per_day': 80,
                     'total_score': 50.0,
                     'confidence': 50.0,
                     'reasoning': [f'Fallback score: {str(e)[:50]}'],
-                    'productivity': {'tons_per_day': 0, 'loads_per_day': 0}
+                    'productivity': {'tons_per_day': 80, 'loads_per_day': 4}
                 })
 
-        # Sort by score and get best recommendation
+        # Sort by score
         truck_scores.sort(key=lambda x: x.get('total_score', 0), reverse=True)
 
-        if truck_scores:
-            best = truck_scores[0]
-            productivity = best.get('productivity', {})
+        # Calculate how many trucks needed to cover the order tonnage
+        # Select multiple trucks if order > single truck capacity
+        assigned_trucks = []
+        coverage_tons = 0
 
-            # Build detailed reasoning
-            reasoning_parts = best.get('reasoning', [])
-            if productivity:
-                reasoning_parts.insert(0, f"Est. {productivity.get('tons_per_day', 0):.0f} tons/day, {productivity.get('loads_per_day', 0)} loads")
+        for truck in truck_scores:
+            if coverage_tons >= tons_remaining:
+                break
 
-            best_recommendation = {
+            # Skip trucks that are already maxed out for the day
+            truck_daily_capacity = truck['tons_per_day']
+            already_assigned = truck.get('already_assigned_tons', 0)
+            available_capacity = max(0, truck_daily_capacity - already_assigned)
+
+            if available_capacity <= 0:
+                continue
+
+            contribution = min(available_capacity, tons_remaining - coverage_tons)
+            coverage_tons += contribution
+
+            # Calculate loads needed for this truck's contribution
+            capacity_per_load = truck.get('capacity_tons') or 22
+            loads_needed = max(1, int((contribution + capacity_per_load - 1) / capacity_per_load))
+            is_partial_day = contribution < (truck_daily_capacity * 0.8)  # Less than 80% = partial day
+
+            assigned_trucks.append({
+                **truck,
+                'contribution_tons': round(contribution, 1),
+                'available_capacity': round(available_capacity, 1),
+                'loads_needed': loads_needed,
+                'is_partial_day': is_partial_day
+            })
+
+        # Calculate trucks needed
+        avg_tons_per_truck = 80  # Conservative estimate
+        if truck_scores and truck_scores[0].get('tons_per_day'):
+            avg_tons_per_truck = truck_scores[0]['tons_per_day']
+
+        trucks_needed = max(1, int((tons_remaining + avg_tons_per_truck - 1) / avg_tons_per_truck))
+        trucks_available = len(assigned_trucks)
+
+        # Build recommendation
+        if assigned_trucks:
+            primary = assigned_trucks[0]
+            productivity = primary.get('productivity', {})
+
+            reasoning_parts = []
+            reasoning_parts.append(f"Order: {total_quantity:.0f} tons, Remaining: {tons_remaining:.0f} tons")
+
+            if len(assigned_trucks) > 1:
+                # Show truck breakdown with loads
+                full_day_trucks = [t for t in assigned_trucks if not t.get('is_partial_day')]
+                partial_trucks = [t for t in assigned_trucks if t.get('is_partial_day')]
+
+                if full_day_trucks:
+                    reasoning_parts.append(f"{len(full_day_trucks)} full day truck(s)")
+                if partial_trucks:
+                    for pt in partial_trucks:
+                        reasoning_parts.append(f"{pt['driver_name']}: {pt.get('contribution_tons', 0):.0f}t ({pt.get('loads_needed', 1)} loads)")
+            else:
+                loads = primary.get('loads_needed', int(tons_remaining / 22) + 1)
+                reasoning_parts.append(f"{primary['driver_name']}: {loads} loads ({primary.get('tons_per_day', 80):.0f}t/day capacity)")
+
+            order_recommendation = {
                 'order_id': order_id,
                 'order_number': order['order_number'],
                 'job_name': order['job_name'],
                 'material': order['material_name'] or material,
-                'driver_id': best['driver_id'],
-                'driver_name': best['driver_name'],
-                'truck_id': best['truck_id'],
-                'truck_number': best['truck_number'],
-                'truck_name': best.get('truck_name'),
-                'plant_id': order.get('plant_id'),
-                'plant_name': order.get('plant_name'),
                 'pickup_location': pickup,
                 'destination': destination,
-                'estimated_tons_per_day': productivity.get('tons_per_day', 0),
-                'estimated_loads_per_day': productivity.get('loads_per_day', 0),
-                'cycle_time_minutes': productivity.get('cycle_time_minutes', 0),
-                'confidence': best.get('confidence', 50),
-                'quality': best.get('recommendation_quality', 'unknown'),
-                'scores': best.get('scores', {}),
-                'reasoning': ' | '.join(reasoning_parts[:4]),
-                'alternatives': [
-                    {'driver_name': alt['driver_name'], 'score': alt.get('total_score', 0)}
-                    for alt in truck_scores[1:4]
-                ]
+                # Order totals
+                'total_tons_ordered': total_quantity,
+                'tons_delivered': tons_delivered,
+                'tons_remaining': tons_remaining,
+                'trucks_needed': trucks_needed,
+                'trucks_assigned': len(assigned_trucks),
+                'coverage_tons': coverage_tons,
+                'coverage_percent': round((coverage_tons / tons_remaining) * 100, 1) if tons_remaining > 0 else 100,
+                # Primary truck recommendation
+                'primary_driver_id': primary['driver_id'],
+                'primary_driver_name': primary['driver_name'],
+                'primary_truck_id': primary['truck_id'],
+                'primary_truck_number': primary['truck_number'],
+                'primary_tons_per_day': primary.get('tons_per_day', 80),
+                # All assigned trucks with load details
+                'assigned_trucks': [
+                    {
+                        'driver_id': t['driver_id'],
+                        'driver_name': t['driver_name'],
+                        'truck_id': t['truck_id'],
+                        'truck_number': t['truck_number'],
+                        'tons_per_day': t.get('tons_per_day', 80),
+                        'contribution_tons': t.get('contribution_tons', 0),
+                        'loads_needed': t.get('loads_needed', 1),
+                        'is_partial_day': t.get('is_partial_day', False),
+                        'score': t.get('total_score', 50)
+                    }
+                    for t in assigned_trucks
+                ],
+                # Metadata
+                'plant_id': order.get('plant_id'),
+                'plant_name': order.get('plant_name'),
+                'confidence': primary.get('confidence', 50),
+                'quality': primary.get('recommendation_quality', 'unknown'),
+                'reasoning': ' | '.join(reasoning_parts[:4])
             }
 
-            recommendations.append(best_recommendation)
+            recommendations.append(order_recommendation)
+
+            # Update order with trucks needed estimate
+            query_db('''
+                UPDATE orders SET estimated_trucks_needed = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (trucks_needed, order_id), commit=True)
 
             # Save recommendation to database
             query_db('''
@@ -1283,22 +1420,21 @@ def ai_optimize_dispatch():
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 order_id,
-                best_recommendation['driver_id'],
-                best_recommendation['truck_id'],
-                best_recommendation.get('plant_id'),
+                primary['driver_id'],
+                primary['truck_id'],
+                order.get('plant_id'),
                 productivity.get('distance_miles', 0),
                 productivity.get('cycle_time_minutes', 0),
-                0,  # Fuel cost calculated separately
-                0,  # Profit needs pricing data
-                best_recommendation['confidence'],
-                best_recommendation['reasoning']
+                0, 0,
+                order_recommendation['confidence'],
+                order_recommendation['reasoning']
             ), commit=True)
 
     return jsonify({
         'success': True,
         'recommendations': recommendations,
         'count': len(recommendations),
-        'message': f'Generated {len(recommendations)} smart recommendations'
+        'message': f'Generated {len(recommendations)} smart recommendations with tonnage coverage'
     })
 
 @app.route('/api/ai/apply-recommendation', methods=['POST'])
@@ -2193,6 +2329,33 @@ def ensure_ai_tables_exist():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Add order fulfillment tracking columns
+    order_tracking_columns = [
+        ('tons_delivered', 'REAL DEFAULT 0'),
+        ('tons_remaining', 'REAL'),
+        ('loads_assigned', 'INTEGER DEFAULT 0'),
+        ('loads_completed', 'INTEGER DEFAULT 0'),
+        ('estimated_trucks_needed', 'INTEGER'),
+    ]
+
+    for col_name, col_def in order_tracking_columns:
+        try:
+            cur.execute(f'ALTER TABLE orders ADD COLUMN {col_name} {col_def}')
+        except:
+            pass  # Column already exists
+
+    # Add order_id to loads_active for tracking which order a load belongs to
+    try:
+        cur.execute('ALTER TABLE loads_active ADD COLUMN order_id INTEGER')
+    except:
+        pass  # Column already exists
+
+    # Add order_id to loads_history as well
+    try:
+        cur.execute('ALTER TABLE loads_history ADD COLUMN order_id INTEGER')
+    except:
+        pass  # Column already exists
 
     # Insert default AI settings
     default_settings = [
