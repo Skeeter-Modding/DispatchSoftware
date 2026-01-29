@@ -89,44 +89,43 @@ class SamsaraDriver:
 
 
 # ============================================================================
-# GEOFENCE DEFINITIONS (SRM/JONEL Compatible)
+# GEOFENCE DEFINITIONS (SRM Coastal GA/SC Fleet)
 # ============================================================================
 
-# Key locations for geofence-based status updates
+# Key locations for geofence-based status updates - Savannah/Coastal Area
 GEOFENCES = {
-    # SRM Plants (23 locations)
-    "SRM-SMYRNA": {"lat": 33.8839, "lon": -84.5144, "radius": 200, "type": "plant"},
-    "SRM-MARIETTA": {"lat": 33.9526, "lon": -84.5499, "radius": 200, "type": "plant"},
-    "SRM-ALPHARETTA": {"lat": 34.0754, "lon": -84.2941, "radius": 200, "type": "plant"},
-    "SRM-LAWRENCEVILLE": {"lat": 33.9562, "lon": -83.9880, "radius": 200, "type": "plant"},
-    "SRM-DULUTH": {"lat": 34.0029, "lon": -84.1447, "radius": 200, "type": "plant"},
-    "SRM-BUFORD": {"lat": 34.1207, "lon": -84.0043, "radius": 200, "type": "plant"},
-    "SRM-GAINESVILLE": {"lat": 34.2979, "lon": -83.8241, "radius": 200, "type": "plant"},
-    "SRM-CUMMING": {"lat": 34.2073, "lon": -84.1402, "radius": 200, "type": "plant"},
-    "SRM-CANTON": {"lat": 34.2368, "lon": -84.4908, "radius": 200, "type": "plant"},
-    "SRM-WOODSTOCK": {"lat": 34.1015, "lon": -84.5194, "radius": 200, "type": "plant"},
-    "SRM-KENNESAW": {"lat": 34.0234, "lon": -84.6155, "radius": 200, "type": "plant"},
-    "SRM-DOUGLASVILLE": {"lat": 33.7515, "lon": -84.7477, "radius": 200, "type": "plant"},
-    "SRM-NEWNAN": {"lat": 33.3807, "lon": -84.7997, "radius": 200, "type": "plant"},
-    "SRM-PEACHTREE-CITY": {"lat": 33.3968, "lon": -84.5958, "radius": 200, "type": "plant"},
-    "SRM-FAYETTEVILLE": {"lat": 33.4487, "lon": -84.4549, "radius": 200, "type": "plant"},
-    "SRM-MCDONOUGH": {"lat": 33.4473, "lon": -84.1469, "radius": 200, "type": "plant"},
-    "SRM-STOCKBRIDGE": {"lat": 33.5443, "lon": -84.2330, "radius": 200, "type": "plant"},
-    "SRM-CONYERS": {"lat": 33.6676, "lon": -84.0177, "radius": 200, "type": "plant"},
-    "SRM-COVINGTON": {"lat": 33.5968, "lon": -83.8602, "radius": 200, "type": "plant"},
-    "SRM-MONROE": {"lat": 33.7948, "lon": -83.7133, "radius": 200, "type": "plant"},
-    "SRM-ATHENS": {"lat": 33.9519, "lon": -83.3576, "radius": 200, "type": "plant"},
-    "SRM-WINDER": {"lat": 33.9926, "lon": -83.7202, "radius": 200, "type": "plant"},
-    "SRM-JEFFERSON": {"lat": 34.1115, "lon": -83.6021, "radius": 200, "type": "plant"},
+    # SRM Plants - Georgia Coastal
+    "SRM-SAVANNAH": {"lat": 32.0809, "lon": -81.0912, "radius": 200, "type": "plant"},
+    "SRM-GARDEN-CITY": {"lat": 32.0969, "lon": -81.1803, "radius": 200, "type": "plant"},
+    "SRM-POOLER": {"lat": 32.1157, "lon": -81.2470, "radius": 200, "type": "plant"},
+    "SRM-BLOOMINGDALE": {"lat": 32.1324, "lon": -81.2982, "radius": 200, "type": "plant"},
+    "SRM-RINCON": {"lat": 32.2960, "lon": -81.2354, "radius": 200, "type": "plant"},
+    "SRM-GUYTON": {"lat": 32.3368, "lon": -81.3976, "radius": 200, "type": "plant"},
+    "SRM-STATESBORO": {"lat": 32.4488, "lon": -81.7832, "radius": 200, "type": "plant"},
+    "SRM-RICHMOND-HILL": {"lat": 31.9382, "lon": -81.3054, "radius": 200, "type": "plant"},
+    "SRM-HINESVILLE": {"lat": 31.8468, "lon": -81.5959, "radius": 200, "type": "plant"},
+    "SRM-MIDWAY": {"lat": 31.8057, "lon": -81.4301, "radius": 200, "type": "plant"},
+    "SRM-BRUNSWICK": {"lat": 31.1499, "lon": -81.4915, "radius": 200, "type": "plant"},
+    "SRM-KINGSLAND": {"lat": 30.7999, "lon": -81.6898, "radius": 200, "type": "plant"},
+    "SRM-ELLABELL": {"lat": 32.1460, "lon": -81.4726, "radius": 200, "type": "plant"},
+    "SRM-AUGUSTA": {"lat": 33.4735, "lon": -81.9748, "radius": 200, "type": "plant"},
 
-    # Major Quarries/Pickup Locations
-    "VULCAN-NORCROSS": {"lat": 33.9412, "lon": -84.2135, "radius": 300, "type": "pickup"},
-    "VULCAN-LITHONIA": {"lat": 33.7132, "lon": -84.1052, "radius": 300, "type": "pickup"},
-    "MARTIN-MARIETTA-KENNESAW": {"lat": 34.0156, "lon": -84.5832, "radius": 300, "type": "pickup"},
-    "MARTIN-MARIETTA-CUMMING": {"lat": 34.1823, "lon": -84.1156, "radius": 300, "type": "pickup"},
-    "HANSON-AUBURN": {"lat": 34.0134, "lon": -83.8276, "radius": 300, "type": "pickup"},
-    "JAHNA-APALACHEE": {"lat": 33.7845, "lon": -83.5123, "radius": 300, "type": "pickup"},
-    "EAST-COAST-TERMINAL": {"lat": 33.7556, "lon": -84.3889, "radius": 300, "type": "pickup"},
+    # SRM Plants - South Carolina
+    "SRM-BLUFFTON": {"lat": 32.2371, "lon": -80.8604, "radius": 200, "type": "plant"},
+    "SRM-RIDGELAND": {"lat": 32.4807, "lon": -80.9804, "radius": 200, "type": "plant"},
+    "SRM-BEAUFORT": {"lat": 32.4316, "lon": -80.6698, "radius": 200, "type": "plant"},
+    "SRM-HARDEEVILLE": {"lat": 32.2871, "lon": -81.0804, "radius": 200, "type": "plant"},
+    "SRM-GOOSE-CREEK": {"lat": 32.9810, "lon": -80.0326, "radius": 200, "type": "plant"},
+    "SRM-SUMMERVILLE": {"lat": 33.0185, "lon": -80.1756, "radius": 200, "type": "plant"},
+    "SRM-JOHNS-ISLAND": {"lat": 32.7041, "lon": -80.0579, "radius": 200, "type": "plant"},
+    "SRM-NORTH-AUGUSTA": {"lat": 33.5018, "lon": -81.9651, "radius": 200, "type": "plant"},
+
+    # Major Quarries/Pickup Locations - Coastal
+    "JAHNA-FLEMING": {"lat": 31.8632, "lon": -81.4240, "radius": 300, "type": "pickup"},
+    "MARTIN-MARIETTA-SAVANNAH": {"lat": 32.0500, "lon": -81.1500, "radius": 300, "type": "pickup"},
+    "VULCAN-SAVANNAH": {"lat": 32.1200, "lon": -81.2000, "radius": 300, "type": "pickup"},
+    "HANSON-POOLER": {"lat": 32.1100, "lon": -81.2600, "radius": 300, "type": "pickup"},
+    "ROGERS-BLOOMINGDALE": {"lat": 32.1400, "lon": -81.3100, "radius": 300, "type": "pickup"},
 }
 
 
@@ -179,9 +178,9 @@ class MockSamsaraDataGenerator:
                 'samara_device_id': f'SAM-{i:06d}',
                 'truck_type': random.choice(truck_types),
                 'truck_name': f'Truck {i}',
-                'home_lat': 33.8 + random.uniform(-0.3, 0.3),
-                'home_lon': -84.4 + random.uniform(-0.3, 0.3),
-                'home_city': 'Atlanta',
+                'home_lat': 32.08 + random.uniform(-0.3, 0.3),
+                'home_lon': -81.10 + random.uniform(-0.3, 0.3),
+                'home_city': 'Savannah',
                 'driver_name': f'Driver {i}',
                 'driver_id': i
             })
@@ -518,8 +517,8 @@ class MockSamsaraAPI:
             if vehicle_ids and vehicle_id not in vehicle_ids:
                 continue
 
-            home_lat = truck.get('home_lat') or 33.8839
-            home_lon = truck.get('home_lon') or -84.5144
+            home_lat = truck.get('home_lat') or 32.0809
+            home_lon = truck.get('home_lon') or -81.0912
 
             location = self.data_generator._simulate_vehicle_movement(
                 vehicle_id, home_lat, home_lon
@@ -785,8 +784,8 @@ class MockSamsaraAPI:
                 continue
 
             points = []
-            base_lat = truck.get('home_lat') or 33.8839
-            base_lon = truck.get('home_lon') or -84.5144
+            base_lat = truck.get('home_lat') or 32.0809
+            base_lon = truck.get('home_lon') or -81.0912
 
             # Generate 24 points (one per hour)
             for i in range(24):
