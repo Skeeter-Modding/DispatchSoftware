@@ -723,14 +723,16 @@ def history():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
 
-    # Build query
+    # Build query - use LEFT JOINs to handle NULL foreign keys
     query = '''
-        SELECT lh.*, d.name as driver_name, t.truck_number, j.job_name,
-               p.name as plant_name, pl.name as pickup_location, m.name as material_name
+        SELECT lh.*, d.name as driver_name, t.truck_number,
+               COALESCE(j.job_name, 'Unknown Job') as job_name,
+               p.name as plant_name, pl.name as pickup_location, m.name as material_name,
+               COALESCE(lh.quantity_tons, 0) as quantity_tons
         FROM loads_history lh
-        JOIN drivers d ON lh.driver_id = d.id
-        JOIN trucks t ON lh.truck_id = t.id
-        JOIN jobs j ON lh.job_id = j.id
+        LEFT JOIN drivers d ON lh.driver_id = d.id
+        LEFT JOIN trucks t ON lh.truck_id = t.id
+        LEFT JOIN jobs j ON lh.job_id = j.id
         LEFT JOIN plants p ON lh.plant_id = p.id
         LEFT JOIN pickup_locations pl ON lh.pickup_location_id = pl.id
         LEFT JOIN material_types m ON lh.material_id = m.id
@@ -1393,7 +1395,7 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 def estimate_delivery_costs(distance_miles, quantity_tons, costs):
-    """Estimate costs for a delivery"""
+    """Estimate costs for a delivery, including overtime after 8 hours"""
     # Fuel cost (round trip)
     fuel_gallons = (distance_miles * 2) / costs.get('fuel_mpg', 6.0)
     fuel_cost = fuel_gallons * costs.get('fuel_cost_per_gallon', 3.50)
@@ -1404,8 +1406,22 @@ def estimate_delivery_costs(distance_miles, quantity_tons, costs):
 
     total_hours = drive_time_hours + load_time_hours
 
-    # Labor and truck costs
-    driver_cost = total_hours * costs.get('driver_hourly_rate', 25.0)
+    # Labor cost with overtime calculation
+    # Overtime kicks in after threshold hours (default 8)
+    hourly_rate = costs.get('driver_hourly_rate', 25.0)
+    overtime_threshold = costs.get('overtime_threshold_hours', 8.0)
+    overtime_multiplier = costs.get('overtime_multiplier', 1.5)
+
+    if total_hours <= overtime_threshold:
+        driver_cost = total_hours * hourly_rate
+        overtime_hours = 0
+    else:
+        # Regular hours at base rate, overtime at multiplied rate
+        regular_hours = overtime_threshold
+        overtime_hours = total_hours - overtime_threshold
+        driver_cost = (regular_hours * hourly_rate) + (overtime_hours * hourly_rate * overtime_multiplier)
+
+    # Truck operating costs (no overtime on equipment)
     truck_cost = total_hours * costs.get('truck_hourly_cost', 15.0)
 
     total_cost = fuel_cost + driver_cost + truck_cost
@@ -1416,6 +1432,7 @@ def estimate_delivery_costs(distance_miles, quantity_tons, costs):
         'truck_cost': round(truck_cost, 2),
         'total_cost': round(total_cost, 2),
         'estimated_hours': round(total_hours, 2),
+        'overtime_hours': round(overtime_hours, 2),
         'distance_miles': round(distance_miles, 1)
     }
 
@@ -2474,11 +2491,13 @@ def ensure_tables_exist():
     default_factors = [
         ('fuel_cost_per_gallon', 3.50, '$/gallon', 'Current diesel fuel price'),
         ('fuel_mpg', 6.0, 'mpg', 'Average truck fuel efficiency'),
-        ('driver_hourly_rate', 25.0, '$/hour', 'Driver hourly wage'),
+        ('driver_hourly_rate', 25.0, '$/hour', 'Driver regular hourly wage'),
         ('truck_hourly_cost', 15.0, '$/hour', 'Truck operating cost per hour'),
         ('average_speed_mph', 35.0, 'mph', 'Average driving speed'),
         ('load_time_minutes', 20, 'minutes', 'Time to load at plant'),
-        ('unload_time_minutes', 15, 'minutes', 'Time to unload at job site')
+        ('unload_time_minutes', 15, 'minutes', 'Time to unload at job site'),
+        ('overtime_threshold_hours', 8.0, 'hours', 'Hours before overtime kicks in'),
+        ('overtime_multiplier', 1.5, 'multiplier', 'Overtime pay rate (1.5x = time and a half)')
     ]
     for factor in default_factors:
         cur.execute('''
