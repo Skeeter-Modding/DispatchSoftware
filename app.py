@@ -12,6 +12,9 @@ import json
 from functools import wraps
 import os
 
+# Import configuration
+import config
+
 # Groq AI Integration
 try:
     from groq import Groq
@@ -30,9 +33,15 @@ from ai_knowledge import (
 ai_engine = AIDispatchEngine()
 
 app = Flask(__name__)
-# Use environment variable for secret key in production
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'srm-dispatch-secret-key-2024-dev')
-DATABASE = 'database/srm_dispatch.db'
+app.config['SECRET_KEY'] = config.SECRET_KEY
+
+# Database path from config (supports DATABASE_PATH environment variable)
+DATABASE = config.DATABASE_PATH
+
+# Ensure database directory exists
+db_dir = os.path.dirname(DATABASE)
+if db_dir and not os.path.exists(db_dir):
+    os.makedirs(db_dir, exist_ok=True)
 
 # Security headers
 @app.after_request
@@ -55,7 +64,7 @@ def get_db():
 def init_db():
     """Initialize database with schema"""
     conn = get_db()
-    with open('database/schema.sql', 'r') as f:
+    with open(config.SCHEMA_PATH, 'r') as f:
         conn.executescript(f.read())
     conn.commit()
     conn.close()
