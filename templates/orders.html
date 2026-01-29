@@ -94,6 +94,7 @@
                                 <td>
                                     {% set status_classes = {
                                         'pending': 'bg-warning',
+                                        'partial': 'bg-info',
                                         'assigned': 'bg-success',
                                         'cancelled': 'bg-danger'
                                     } %}
@@ -102,7 +103,7 @@
                                     </span>
                                 </td>
                                 <td>
-                                    {% if order.status == 'pending' %}
+                                    {% if order.status == 'pending' or order.status == 'partial' %}
                                     <button class="btn btn-sm btn-primary" onclick="showAssignOrderModal({{ order.id }}, '{{ order.order_number }}')">
                                         <i class="fas fa-user-plus me-1"></i>Assign
                                     </button>
@@ -324,6 +325,23 @@ const assignmentsData = [
     {% endfor %}
 ];
 
+// HTML escape utility to prevent XSS
+function escapeHtml(unsafe) {
+    if (unsafe === null || unsafe === undefined) return '';
+    return String(unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// Validate and convert to integer, returns 0 if invalid
+function safeInt(value) {
+    const num = parseInt(value, 10);
+    return isNaN(num) ? 0 : num;
+}
+
 function showAddOrderModal() {
     const modal = new bootstrap.Modal(document.getElementById('addOrderModal'));
     modal.show();
@@ -526,8 +544,139 @@ function runAIOptimization() {
 }
 
 function showAIRecommendations(recommendations) {
-    let html = '<div class="list-group">';
+    // Build list group using DOM methods to prevent XSS
+    const listGroup = document.createElement('div');
+    listGroup.className = 'list-group';
+
     recommendations.forEach(rec => {
+        // Validate order-level data
+        const orderId = safeInt(rec.order_id);
+        const plantId = safeInt(rec.plant_id);
+        const confidence = safeInt(rec.confidence);
+        const totalTons = parseFloat(rec.total_tons_ordered) || parseFloat(rec.tons_remaining) || 0;
+        const tonsRemaining = parseFloat(rec.tons_remaining) || totalTons;
+        const trucksNeeded = safeInt(rec.trucks_needed) || 1;
+
+        // Get assigned trucks array (new format) or create single-truck array (fallback)
+        let assignedTrucks = rec.assigned_trucks || [];
+        if (assignedTrucks.length === 0 && rec.primary_driver_id) {
+            // Fallback: create single truck entry from primary fields
+            assignedTrucks = [{
+                driver_id: rec.primary_driver_id,
+                driver_name: rec.primary_driver_name,
+                truck_id: rec.primary_truck_id,
+                truck_number: rec.primary_truck_number,
+                contribution_tons: tonsRemaining,
+                loads_needed: Math.ceil(tonsRemaining / 22)
+            }];
+        }
+
+        // Create order card
+        const listItem = document.createElement('div');
+        listItem.className = 'list-group-item';
+
+        // Order header with summary
+        const orderHeader = document.createElement('div');
+        orderHeader.className = 'd-flex justify-content-between align-items-center mb-2 pb-2 border-bottom';
+
+        const orderTitle = document.createElement('div');
+        const orderStrong = document.createElement('strong');
+        orderStrong.textContent = 'Order ' + escapeHtml(rec.order_number);
+        orderTitle.appendChild(orderStrong);
+
+        const orderMeta = document.createElement('small');
+        orderMeta.className = 'd-block text-muted';
+        orderMeta.textContent = escapeHtml(rec.material || '') + ' - ' + escapeHtml(rec.destination || '');
+        orderTitle.appendChild(orderMeta);
+
+        const orderStats = document.createElement('div');
+        orderStats.className = 'text-end';
+
+        const tonsBadge = document.createElement('span');
+        tonsBadge.className = 'badge bg-warning text-dark me-1';
+        tonsBadge.textContent = tonsRemaining.toFixed(0) + ' tons remaining';
+        orderStats.appendChild(tonsBadge);
+
+        const trucksBadge = document.createElement('span');
+        trucksBadge.className = 'badge bg-info';
+        trucksBadge.textContent = trucksNeeded + ' truck(s) needed';
+        orderStats.appendChild(trucksBadge);
+
+        orderHeader.appendChild(orderTitle);
+        orderHeader.appendChild(orderStats);
+        listItem.appendChild(orderHeader);
+
+        // Reasoning
+        if (rec.reasoning) {
+            const reasoningDiv = document.createElement('div');
+            reasoningDiv.className = 'mb-2';
+            const reasoningSmall = document.createElement('small');
+            reasoningSmall.className = 'text-muted';
+            reasoningSmall.textContent = rec.reasoning;
+            reasoningDiv.appendChild(reasoningSmall);
+            listItem.appendChild(reasoningDiv);
+        }
+
+        // Truck assignments
+        const trucksContainer = document.createElement('div');
+        trucksContainer.className = 'ms-3';
+
+        assignedTrucks.forEach((truck, idx) => {
+            const truckDriverId = safeInt(truck.driver_id);
+            const truckTruckId = safeInt(truck.truck_id);
+            const contributionTons = parseFloat(truck.contribution_tons) || 0;
+            const loadsNeeded = safeInt(truck.loads_needed) || 1;
+
+            if (!truckDriverId || !truckTruckId || contributionTons <= 0) return;
+
+            const truckRow = document.createElement('div');
+            truckRow.className = 'd-flex justify-content-between align-items-center py-1';
+            if (idx < assignedTrucks.length - 1) {
+                truckRow.className += ' border-bottom';
+            }
+
+            const truckInfo = document.createElement('div');
+
+            const truckIcon = document.createElement('i');
+            truckIcon.className = 'fas fa-truck me-2 text-primary';
+            truckInfo.appendChild(truckIcon);
+
+            const driverSpan = document.createElement('span');
+            driverSpan.textContent = escapeHtml(truck.driver_name) + ' (#' + escapeHtml(truck.truck_number) + ')';
+            truckInfo.appendChild(driverSpan);
+
+            const loadInfo = document.createElement('small');
+            loadInfo.className = 'text-muted ms-2';
+            loadInfo.textContent = contributionTons.toFixed(0) + 't (' + loadsNeeded + ' loads)';
+            truckInfo.appendChild(loadInfo);
+
+            const applyBtn = document.createElement('button');
+            applyBtn.className = 'btn btn-sm btn-outline-primary';
+            applyBtn.innerHTML = '<i class="fas fa-check me-1"></i>Assign';
+            // Pass contribution_tons to the apply function
+            applyBtn.addEventListener('click', function() {
+                applyRecommendation(orderId, truckDriverId, truckTruckId, plantId, contributionTons);
+            });
+
+            truckRow.appendChild(truckInfo);
+            truckRow.appendChild(applyBtn);
+            trucksContainer.appendChild(truckRow);
+        });
+
+        listItem.appendChild(trucksContainer);
+
+        // Apply all button for this order (if multiple trucks)
+        if (assignedTrucks.length > 1) {
+            const applyAllOrderBtn = document.createElement('button');
+            applyAllOrderBtn.className = 'btn btn-sm btn-primary mt-2 w-100';
+            applyAllOrderBtn.innerHTML = '<i class="fas fa-check-double me-1"></i>Assign All ' + assignedTrucks.length + ' Trucks to This Order';
+            applyAllOrderBtn.addEventListener('click', function() {
+                applyOrderTrucks(orderId, plantId, assignedTrucks);
+            });
+            listItem.appendChild(applyAllOrderBtn);
+        }
+
+        listGroup.appendChild(listItem);
         // Safe access with defaults
         const orderNumber = rec.order_number || 'Unknown';
         const material = rec.material || 'Material';
@@ -571,34 +720,64 @@ function showAIRecommendations(recommendations) {
             </div>
         `;
     });
-    html += '</div>';
 
-    // Create and show modal
-    const modalHtml = `
-        <div class="modal fade" id="aiRecommendationsModal" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content">
-                    <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title"><i class="fas fa-robot me-2"></i>AI Recommendations</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">${html}</div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        <button type="button" class="btn btn-success" onclick="applyAllRecommendations()">
-                            <i class="fas fa-check-double me-1"></i>Apply All
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    // Create modal structure (static content only, no user data)
+    const modalDiv = document.createElement('div');
+    modalDiv.className = 'modal fade';
+    modalDiv.id = 'aiRecommendationsModal';
+    modalDiv.tabIndex = -1;
+
+    const modalDialog = document.createElement('div');
+    modalDialog.className = 'modal-dialog modal-lg modal-dialog-scrollable';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
+
+    // Modal header
+    const modalHeader = document.createElement('div');
+    modalHeader.className = 'modal-header bg-success text-white';
+    const modalTitle = document.createElement('h5');
+    modalTitle.className = 'modal-title';
+    modalTitle.innerHTML = '<i class="fas fa-robot me-2"></i>AI Recommendations';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn-close btn-close-white';
+    closeBtn.setAttribute('data-bs-dismiss', 'modal');
+    modalHeader.appendChild(modalTitle);
+    modalHeader.appendChild(closeBtn);
+
+    // Modal body
+    const modalBody = document.createElement('div');
+    modalBody.className = 'modal-body';
+    modalBody.appendChild(listGroup);
+
+    // Modal footer
+    const modalFooter = document.createElement('div');
+    modalFooter.className = 'modal-footer';
+    const closeFooterBtn = document.createElement('button');
+    closeFooterBtn.type = 'button';
+    closeFooterBtn.className = 'btn btn-secondary';
+    closeFooterBtn.setAttribute('data-bs-dismiss', 'modal');
+    closeFooterBtn.textContent = 'Close';
+    const applyAllBtn = document.createElement('button');
+    applyAllBtn.type = 'button';
+    applyAllBtn.className = 'btn btn-success';
+    applyAllBtn.innerHTML = '<i class="fas fa-check-double me-1"></i>Apply All Recommendations';
+    applyAllBtn.addEventListener('click', applyAllRecommendations);
+    modalFooter.appendChild(closeFooterBtn);
+    modalFooter.appendChild(applyAllBtn);
+
+    modalContent.appendChild(modalHeader);
+    modalContent.appendChild(modalBody);
+    modalContent.appendChild(modalFooter);
+    modalDialog.appendChild(modalContent);
+    modalDiv.appendChild(modalDialog);
 
     // Remove existing modal if any
     const existing = document.getElementById('aiRecommendationsModal');
     if (existing) existing.remove();
 
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    document.body.appendChild(modalDiv);
     const modal = new bootstrap.Modal(document.getElementById('aiRecommendationsModal'));
     modal.show();
 
@@ -606,21 +785,82 @@ function showAIRecommendations(recommendations) {
     window.currentRecommendations = recommendations;
 }
 
-function applyRecommendation(orderId, driverId, truckId, plantId) {
+// Apply all trucks to a single order
+function applyOrderTrucks(orderId, plantId, trucks) {
+    const safeOrderId = safeInt(orderId);
+    const safePlantId = safeInt(plantId);
+
+    if (!safeOrderId) {
+        alert('Invalid order data');
+        return;
+    }
+
+    const promises = trucks.map(truck => {
+        const truckDriverId = safeInt(truck.driver_id);
+        const truckTruckId = safeInt(truck.truck_id);
+        const contributionTons = parseFloat(truck.contribution_tons) || 0;
+
+        if (!truckDriverId || !truckTruckId || contributionTons <= 0) {
+            return Promise.resolve();
+        }
+
+        return fetch('/api/ai/apply-recommendation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                order_id: safeOrderId,
+                driver_id: truckDriverId,
+                truck_id: truckTruckId,
+                plant_id: safePlantId,
+                contribution_tons: contributionTons
+            })
+        }).then(r => r.json());
+    });
+
+    Promise.all(promises).then(results => {
+        const success = results.filter(r => r && r.success).length;
+        alert('Assigned ' + success + ' of ' + trucks.length + ' trucks to order');
+        if (success > 0) location.reload();
+    });
+}
+
+function applyRecommendation(orderId, driverId, truckId, plantId, contributionTons) {
+    // Validate all IDs are integers (defense-in-depth)
+    const safeOrderId = safeInt(orderId);
+    const safeDriverId = safeInt(driverId);
+    const safeTruckId = safeInt(truckId);
+    const safePlantId = safeInt(plantId);
+    const safeContributionTons = parseFloat(contributionTons) || 0;
+
+    if (!safeOrderId || !safeDriverId || !safeTruckId) {
+        alert('Invalid recommendation data');
+        return;
+    }
+
+    const payload = {
+        order_id: safeOrderId,
+        driver_id: safeDriverId,
+        truck_id: safeTruckId,
+        plant_id: safePlantId
+    };
+
+    // Include contribution_tons if provided (for partial order assignments)
+    if (safeContributionTons > 0) {
+        payload.contribution_tons = safeContributionTons;
+    }
+
     fetch('/api/ai/apply-recommendation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            order_id: orderId,
-            driver_id: driverId,
-            truck_id: truckId,
-            plant_id: plantId
-        })
+        body: JSON.stringify(payload)
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert(`Order assigned! Load #${data.load_number} created.`);
+            const msg = safeContributionTons > 0
+                ? 'Assigned ' + safeContributionTons.toFixed(0) + ' tons! Load #' + data.load_number + ' created.'
+                : 'Order assigned! Load #' + data.load_number + ' created.';
+            alert(msg);
             location.reload();
         } else {
             alert('Failed to apply recommendation: ' + (data.error || 'Unknown error'));
@@ -638,11 +878,70 @@ function applyAllRecommendations() {
         return;
     }
 
-    if (!confirm(`Apply all ${window.currentRecommendations.length} recommendations?`)) {
+    // Count total truck assignments across all orders
+    let totalAssignments = 0;
+    window.currentRecommendations.forEach(rec => {
+        const trucks = rec.assigned_trucks || [];
+        if (trucks.length > 0) {
+            totalAssignments += trucks.length;
+        } else if (rec.primary_driver_id) {
+            totalAssignments += 1;
+        }
+    });
+
+    if (!confirm('Apply all ' + totalAssignments + ' truck assignments across ' + window.currentRecommendations.length + ' orders?')) {
         return;
     }
 
     let applied = 0;
+    const allPromises = [];
+
+    window.currentRecommendations.forEach(rec => {
+        const safeOrderId = safeInt(rec.order_id);
+        const safePlantId = safeInt(rec.plant_id);
+
+        if (!safeOrderId) return;
+
+        // Get assigned trucks or create fallback
+        let trucks = rec.assigned_trucks || [];
+        if (trucks.length === 0 && rec.primary_driver_id) {
+            trucks = [{
+                driver_id: rec.primary_driver_id,
+                truck_id: rec.primary_truck_id,
+                contribution_tons: rec.tons_remaining || rec.total_tons_ordered
+            }];
+        }
+
+        // Create a promise for each truck assignment
+        trucks.forEach(truck => {
+            const truckDriverId = safeInt(truck.driver_id);
+            const truckTruckId = safeInt(truck.truck_id);
+            const contributionTons = parseFloat(truck.contribution_tons) || 0;
+
+            if (!truckDriverId || !truckTruckId || contributionTons <= 0) return;
+
+            const promise = fetch('/api/ai/apply-recommendation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    order_id: safeOrderId,
+                    driver_id: truckDriverId,
+                    truck_id: truckTruckId,
+                    plant_id: safePlantId,
+                    contribution_tons: contributionTons
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) applied++;
+            });
+
+            allPromises.push(promise);
+        });
+    });
+
+    Promise.all(allPromises).then(() => {
+        alert('Applied ' + applied + ' of ' + totalAssignments + ' truck assignments!');
     let failed = 0;
     const promises = window.currentRecommendations.map(rec => {
         return fetch('/api/ai/apply-recommendation', {

@@ -840,6 +840,12 @@ class ProductivityCalculator:
     Daily Productivity:
     - Effective work hours ÷ cycle time = loads per day
     - Loads per day × tons per load = tons per day
+
+    OVERTIME PAY (FACTORING):
+    - Regular time: First 8 hours at base hourly rate
+    - Overtime: Hours beyond 8 paid at 1.5x (time and a half)
+    - This affects daily cost calculations and job profitability
+    - Long hauls (>8 hours) incur overtime costs for factoring
     """
 
     # Efficiency factor accounts for breaks, delays, fuel stops
@@ -847,6 +853,10 @@ class ProductivityCalculator:
 
     # Wait time as percentage of cycle
     WAIT_TIME_PERCENT = 0.10  # 10% of cycle for queuing
+
+    # Overtime configuration (for factoring/cost calculations)
+    OVERTIME_THRESHOLD_HOURS = 8.0  # Hours before overtime kicks in
+    OVERTIME_MULTIPLIER = 1.5  # Time and a half after 8 hours
 
     def __init__(self, route_knowledge: RouteKnowledge = None):
         self.routes = route_knowledge or RouteKnowledge()
@@ -948,9 +958,20 @@ class ProductivityCalculator:
         else:
             haul_category = "long"
 
-        # Calculate cost metrics
+        # Calculate cost metrics with overtime factoring
         hourly_cost = type_chars.get("hourly_operating_cost", 100)
-        daily_cost = work_hours * hourly_cost
+
+        # Calculate overtime costs (time and a half after 8 hours)
+        if work_hours <= self.OVERTIME_THRESHOLD_HOURS:
+            regular_hours = work_hours
+            overtime_hours = 0
+            daily_cost = work_hours * hourly_cost
+        else:
+            regular_hours = self.OVERTIME_THRESHOLD_HOURS
+            overtime_hours = work_hours - self.OVERTIME_THRESHOLD_HOURS
+            # Regular hours at base rate + overtime at 1.5x rate
+            daily_cost = (regular_hours * hourly_cost) + (overtime_hours * hourly_cost * self.OVERTIME_MULTIPLIER)
+
         cost_per_ton = daily_cost / tons_per_day if tons_per_day > 0 else 0
 
         return {
@@ -960,6 +981,8 @@ class ProductivityCalculator:
             "truck_capacity_tons": capacity,
             "material_code": material_code,
             "work_hours": work_hours,
+            "regular_hours": round(regular_hours, 2),
+            "overtime_hours": round(overtime_hours, 2),
             "effective_hours": round(effective_hours, 2),
             "cycle_time_hours": cycle["total_cycle_hours"],
             "cycle_time_minutes": cycle["total_cycle_minutes"],
@@ -969,8 +992,10 @@ class ProductivityCalculator:
             "cycle_breakdown": cycle,
             "cost_per_ton": round(cost_per_ton, 2),
             "daily_cost": round(daily_cost, 2),
+            "overtime_cost": round(overtime_hours * hourly_cost * (self.OVERTIME_MULTIPLIER - 1), 2) if overtime_hours > 0 else 0,
             "tons_per_hour": round(tons_per_day / work_hours, 1) if work_hours > 0 else 0,
             "is_efficient": loads_per_day >= 3,  # At least 3 loads = efficient route
+            "has_overtime": overtime_hours > 0,
         }
 
     def estimate_route_productivity(self,

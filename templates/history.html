@@ -42,6 +42,7 @@
     </div>
     
     <!-- Summary Stats -->
+    {% set total_tons = loads|selectattr('quantity_tons')|map(attribute='quantity_tons')|sum %}
     <div class="row mb-4">
         <div class="col-md-3">
             <div class="card bg-primary text-white">
@@ -55,7 +56,7 @@
             <div class="card bg-success text-white">
                 <div class="card-body">
                     <h5 class="card-title">Total Tons</h5>
-                    <h2 class="display-4">{{ loads|sum(attribute='quantity_tons')|round(1) }}</h2>
+                    <h2 class="display-4">{{ total_tons|round(1) }}</h2>
                 </div>
             </div>
         </div>
@@ -65,7 +66,7 @@
                     <h5 class="card-title">Avg Tons/Load</h5>
                     <h2 class="display-4">
                         {% if loads|length > 0 %}
-                        {{ (loads|sum(attribute='quantity_tons') / loads|length)|round(1) }}
+                        {{ (total_tons / loads|length)|round(1) }}
                         {% else %}
                         0
                         {% endif %}
@@ -77,7 +78,7 @@
             <div class="card bg-warning text-dark">
                 <div class="card-body">
                     <h5 class="card-title">Drivers Worked</h5>
-                    <h2 class="display-4">{{ loads|map(attribute='driver_name')|unique|list|length }}</h2>
+                    <h2 class="display-4">{{ loads|selectattr('driver_name')|map(attribute='driver_name')|unique|list|length }}</h2>
                 </div>
             </div>
         </div>
@@ -111,19 +112,23 @@
                     <tbody>
                         {% for load in loads %}
                         <tr>
-                            <td>{{ load.created_at.strftime('%Y-%m-%d') if load.created_at else '' }}</td>
-                            <td>{{ load.load_number }}</td>
+                            <td>{{ (load.created_at[:10] if load.created_at else (load.assigned_at[:10] if load.assigned_at else '')) }}</td>
+                            <td>{{ load.load_number or '-' }}</td>
                             <td>
+                                {% if load.driver_id %}
                                 <a href="{{ url_for('driver_history', driver_id=load.driver_id) }}" class="text-decoration-none">
-                                    {{ load.driver_name }}
+                                    {{ load.driver_name or 'Unknown' }}
                                 </a>
+                                {% else %}
+                                {{ load.driver_name or 'Unknown' }}
+                                {% endif %}
                             </td>
-                            <td>{{ load.truck_number }}</td>
-                            <td>{{ load.job_name }}</td>
+                            <td>{{ load.truck_number or '-' }}</td>
+                            <td>{{ load.job_name or '-' }}</td>
                             <td>{{ load.plant_name or '-' }}</td>
                             <td>{{ load.pickup_location or '-' }}</td>
                             <td>{{ load.material_name or '-' }}</td>
-                            <td><strong>{{ load.quantity_tons|round(1) if load.quantity_tons else 0 }}</strong></td>
+                            <td><strong>{{ (load.quantity_tons|round(1)) if load.quantity_tons else 0 }}</strong></td>
                             <td>
                                 <span class="badge bg-{{ 'success' if load.status == 'complete' else 'warning' }}">
                                     {{ load.status|title }}
