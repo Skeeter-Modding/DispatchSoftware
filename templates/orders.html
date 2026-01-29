@@ -900,39 +900,6 @@ function applyAllRecommendations() {
 
     Promise.all(allPromises).then(() => {
         alert('Applied ' + applied + ' of ' + totalAssignments + ' truck assignments!');
-    let failed = 0;
-    const promises = window.currentRecommendations.map(rec => {
-        return fetch('/api/ai/apply-recommendation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                order_id: rec.order_id,
-                driver_id: rec.primary_driver_id,
-                truck_id: rec.primary_truck_id,
-                plant_id: rec.plant_id || null
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                applied++;
-            } else {
-                failed++;
-                console.error('Failed to apply recommendation:', data.error);
-            }
-        })
-        .catch(err => {
-            failed++;
-            console.error('Error applying recommendation:', err);
-        });
-    });
-
-    Promise.all(promises).then(() => {
-        if (failed > 0) {
-            alert(`Applied ${applied} recommendations. ${failed} failed.`);
-        } else {
-            alert(`Successfully applied ${applied} recommendations!`);
-        }
         location.reload();
     });
 }
