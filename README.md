@@ -1,4 +1,4 @@
-# SRM Dispatch - Smyrna Ready Mix Dispatch System
+# Dispatch System
 
 A comprehensive AI-powered dispatch management system for dump truck and aggregate hauling operations.
 
@@ -33,7 +33,7 @@ A comprehensive AI-powered dispatch management system for dump truck and aggrega
 - **Automatic Tonnage Splitting** - Large orders automatically split across multiple trucks
 
 ### Real-Time Tracking
-- **Samara GPS Integration** - Automatic location updates from GPS devices
+- **Samsara GPS Integration** - Automatic location updates from GPS devices
 - **Geofence Detection** - Auto-update load status based on location
 - **Status Workflow**: `Assigned → En Route → At Job → Delivering → Complete`
 - **Live Dashboard** - Real-time overview with auto-refresh
@@ -128,7 +128,7 @@ DispatchSoftware/
     ├── ai_assistant.html    # AI chat interface
     ├── drivers.html         # Driver management
     ├── trucks.html          # Fleet management
-    └── samara.html          # GPS integration
+    └── samsara.html          # GPS integration
 ```
 
 ---
@@ -199,13 +199,13 @@ Ask the AI assistant questions like:
 
 ## Contributing
 
-This is a proprietary system for Smyrna Ready Mix operations.
+This is a proprietary system for private internal use.
 
 ---
 
 ## License
 
-Proprietary - Smyrna Ready Mix Internal Use
+Proprietary - Private Internal Use
 
 ---
 
