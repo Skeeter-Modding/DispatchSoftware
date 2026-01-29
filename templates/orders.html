@@ -528,23 +528,43 @@ function runAIOptimization() {
 function showAIRecommendations(recommendations) {
     let html = '<div class="list-group">';
     recommendations.forEach(rec => {
+        // Safe access with defaults
+        const orderNumber = rec.order_number || 'Unknown';
+        const material = rec.material || 'Material';
+        const pickup = rec.pickup_location || 'Pickup';
+        const destination = rec.destination || 'Destination';
+        const reasoning = rec.reasoning || '';
+        const confidence = typeof rec.confidence === 'number' ? rec.confidence : 50;
+        const tonsRemaining = rec.tons_remaining || 0;
+        const estCost = rec.estimated_cost || Math.round(tonsRemaining * 12);
+        const orderId = rec.order_id;
+        const driverId = rec.primary_driver_id;
+        const truckId = rec.primary_truck_id;
+        const plantId = rec.plant_id || null;
+        const driverName = rec.primary_driver_name || 'Driver';
+        const capacityTons = rec.primary_capacity_tons || 25;
+        const loadsNeeded = rec.assigned_trucks && rec.assigned_trucks[0] ? rec.assigned_trucks[0].loads_needed : Math.ceil(tonsRemaining / capacityTons);
+
+        // Determine confidence color
+        let confidenceColor = 'danger';
+        if (confidence >= 70) confidenceColor = 'success';
+        else if (confidence >= 50) confidenceColor = 'warning';
+
         html += `
             <div class="list-group-item">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
-                        <strong>Order ${rec.order_number}</strong><br>
+                        <strong>Order ${orderNumber}</strong><br>
                         <span class="text-muted">
-                            <i class="fas fa-user me-1"></i>${rec.driver_name} |
-                            <i class="fas fa-truck me-1"></i>${rec.truck_number} |
-                            <i class="fas fa-industry me-1"></i>${rec.plant_name}
+                            ${material} | ${pickup} | ${destination}
                         </span><br>
-                        <small class="text-muted">${rec.reasoning}</small>
+                        <small class="text-muted">${reasoning}</small>
                     </div>
                     <div class="text-end">
-                        <span class="badge bg-success mb-1">${rec.confidence}% confidence</span><br>
-                        <span class="badge bg-info">$${rec.estimated_cost} est. cost</span><br>
-                        <button class="btn btn-sm btn-primary mt-2" onclick="applyRecommendation(${rec.order_id}, ${rec.driver_id}, ${rec.truck_id}, ${rec.plant_id})">
-                            <i class="fas fa-check me-1"></i>Apply
+                        <span class="badge bg-${confidenceColor} mb-1">${confidence.toFixed(1)}% CONFIDENCE</span><br>
+                        <span class="badge bg-info mb-1">$${estCost.toLocaleString()} EST. COST</span><br>
+                        <button class="btn btn-sm btn-primary mt-1" onclick="applyRecommendation(${orderId}, ${driverId}, ${truckId}, ${plantId})">
+                            APPLY
                         </button>
                     </div>
                 </div>
@@ -623,25 +643,39 @@ function applyAllRecommendations() {
     }
 
     let applied = 0;
+    let failed = 0;
     const promises = window.currentRecommendations.map(rec => {
         return fetch('/api/ai/apply-recommendation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 order_id: rec.order_id,
-                driver_id: rec.driver_id,
-                truck_id: rec.truck_id,
-                plant_id: rec.plant_id
+                driver_id: rec.primary_driver_id,
+                truck_id: rec.primary_truck_id,
+                plant_id: rec.plant_id || null
             })
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success) applied++;
+            if (data.success) {
+                applied++;
+            } else {
+                failed++;
+                console.error('Failed to apply recommendation:', data.error);
+            }
+        })
+        .catch(err => {
+            failed++;
+            console.error('Error applying recommendation:', err);
         });
     });
 
     Promise.all(promises).then(() => {
-        alert(`Applied ${applied} recommendations!`);
+        if (failed > 0) {
+            alert(`Applied ${applied} recommendations. ${failed} failed.`);
+        } else {
+            alert(`Successfully applied ${applied} recommendations!`);
+        }
         location.reload();
     });
 }
