@@ -269,6 +269,22 @@ def add_driver():
 
     return redirect(url_for('drivers'))
 
+@app.route('/drivers/<int:driver_id>/edit', methods=['POST'])
+def edit_driver(driver_id):
+    """Update driver information"""
+    name = request.form.get('name')
+    phone = request.form.get('phone')
+    email = request.form.get('email')
+    employee_id = request.form.get('employee_id')
+    status = request.form.get('status', 'active')
+
+    query_db('''
+        UPDATE drivers SET name = ?, phone = ?, email = ?, employee_id = ?, status = ?
+        WHERE id = ?
+    ''', (name, phone, email, employee_id, status, driver_id), commit=True)
+
+    return redirect(url_for('drivers'))
+
 @app.route('/trucks')
 def trucks():
     """Truck management page"""
