@@ -391,6 +391,18 @@ def plants():
     plants_list = query_db('SELECT * FROM plants ORDER BY state, city, name')
     return render_template('plants.html', plants=plants_list)
 
+@app.route('/api/plants/<int:plant_id>/status', methods=['POST'])
+def update_plant_status(plant_id):
+    """Update plant status (active/inactive)"""
+    data = request.get_json() if request.is_json else request.form
+    new_status = data.get('status', 'active')
+
+    query_db('''
+        UPDATE plants SET status = ? WHERE id = ?
+    ''', (new_status, plant_id), commit=True)
+
+    return jsonify({'success': True})
+
 @app.route('/pickup-locations')
 def pickup_locations():
     """Pickup locations management page"""
@@ -454,24 +466,28 @@ def loads():
 
     if status_filter:
         loads_list = query_db('''
-            SELECT l.*, d.name as driver_name, t.truck_number, j.job_name, j.address,
+            SELECT l.*, d.name as driver_name, t.truck_number,
+                   COALESCE(j.job_name, 'No Job Assigned') as job_name,
+                   COALESCE(j.address, '') as address,
                    m.name as product_type, l.assigned_at as scheduled_time
             FROM loads_active l
-            JOIN drivers d ON l.driver_id = d.id
-            JOIN trucks t ON l.truck_id = t.id
-            JOIN jobs j ON l.job_id = j.id
+            LEFT JOIN drivers d ON l.driver_id = d.id
+            LEFT JOIN trucks t ON l.truck_id = t.id
+            LEFT JOIN jobs j ON l.job_id = j.id
             LEFT JOIN material_types m ON l.material_id = m.id
             WHERE l.status = ?
             ORDER BY l.assigned_at DESC
         ''', (status_filter,))
     else:
         loads_list = query_db('''
-            SELECT l.*, d.name as driver_name, t.truck_number, j.job_name, j.address,
+            SELECT l.*, d.name as driver_name, t.truck_number,
+                   COALESCE(j.job_name, 'No Job Assigned') as job_name,
+                   COALESCE(j.address, '') as address,
                    m.name as product_type, l.assigned_at as scheduled_time
             FROM loads_active l
-            JOIN drivers d ON l.driver_id = d.id
-            JOIN trucks t ON l.truck_id = t.id
-            JOIN jobs j ON l.job_id = j.id
+            LEFT JOIN drivers d ON l.driver_id = d.id
+            LEFT JOIN trucks t ON l.truck_id = t.id
+            LEFT JOIN jobs j ON l.job_id = j.id
             LEFT JOIN material_types m ON l.material_id = m.id
             ORDER BY l.assigned_at DESC
         ''')
@@ -2896,6 +2912,24 @@ def ensure_tables_exist():
         cur.execute('ALTER TABLE jobs ADD COLUMN is_one_time BOOLEAN DEFAULT 0')
     except:
         pass  # Column already exists
+
+    # Ensure all plants have status='active' if NULL
+    try:
+        cur.execute("UPDATE plants SET status = 'active' WHERE status IS NULL")
+    except:
+        pass
+
+    # Ensure all jobs have status='active' if NULL
+    try:
+        cur.execute("UPDATE jobs SET status = 'active' WHERE status IS NULL")
+    except:
+        pass
+
+    # Ensure all materials have status='active' if NULL
+    try:
+        cur.execute("UPDATE material_types SET status = 'active' WHERE status IS NULL")
+    except:
+        pass
 
     # Add cancelled_loads column to daily_driver_summary if it doesn't exist
     try:
