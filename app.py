@@ -1278,15 +1278,35 @@ def auto_create_assignments():
     """Auto-create today's assignments from driver defaults"""
     today = datetime.date.today()
 
-    # Get all active driver defaults
+    # Get all active driver defaults with truck validation
     defaults = query_db('''
-        SELECT dtd.*, d.name as driver_name
+        SELECT dtd.*, d.name as driver_name, t.truck_number, t.status as truck_status
         FROM driver_truck_defaults dtd
         JOIN drivers d ON dtd.driver_id = d.id
-        WHERE dtd.is_active = 1 AND d.status = 'active'
+        JOIN trucks t ON dtd.truck_id = t.id
+        WHERE dtd.is_active = 1 AND d.status = 'active' AND t.status = 'active'
     ''')
 
+    if not defaults:
+        # Check if any defaults exist at all
+        any_defaults = query_db('SELECT COUNT(*) as count FROM driver_truck_defaults WHERE is_active = 1', one=True)
+        if any_defaults['count'] == 0:
+            return jsonify({
+                'success': False,
+                'created': 0,
+                'message': 'No driver defaults configured. Go to Management → Driver Defaults to set up defaults first.'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'created': 0,
+                'message': 'No active drivers or trucks found matching the configured defaults.'
+            })
+
     created = 0
+    skipped_existing = 0
+    errors = []
+
     for default in defaults:
         # Check if assignment already exists for today
         existing = query_db('''
@@ -1294,14 +1314,37 @@ def auto_create_assignments():
             WHERE driver_id = ? AND assigned_date = ?
         ''', (default['driver_id'], today), one=True)
 
-        if not existing:
+        if existing:
+            skipped_existing += 1
+            continue
+
+        try:
             query_db('''
                 INSERT INTO assignments (driver_id, truck_id, trailer_id, assigned_date, is_active)
                 VALUES (?, ?, ?, ?, 1)
             ''', (default['driver_id'], default['truck_id'], default['trailer_id'], today), commit=True)
             created += 1
+        except Exception as e:
+            errors.append(f"{default['driver_name']}: {str(e)}")
 
-    return jsonify({'success': True, 'created': created, 'message': f'Created {created} assignments'})
+    # Build informative message
+    if created > 0:
+        msg = f'Created {created} assignment(s)'
+        if skipped_existing > 0:
+            msg += f' ({skipped_existing} already existed for today)'
+        return jsonify({'success': True, 'created': created, 'message': msg})
+    elif skipped_existing > 0:
+        return jsonify({
+            'success': True,
+            'created': 0,
+            'message': f'All {skipped_existing} assignments already exist for today.'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'created': 0,
+            'message': 'Failed to create assignments. ' + '; '.join(errors) if errors else 'Unknown error.'
+        })
 
 # ============ COST FACTORS ============
 
@@ -1392,10 +1435,10 @@ def ai_optimize_dispatch():
     order_ids = data.get('order_ids', [])
 
     if not order_ids:
-        # Get all orders that need coverage (pending or in_progress with remaining tons)
+        # Get all orders that need coverage (pending, partial, or in_progress with remaining tons)
         pending = query_db('''
             SELECT id FROM orders
-            WHERE status IN ('pending', 'in_progress')
+            WHERE status IN ('pending', 'partial', 'in_progress')
             AND (COALESCE(tons_delivered, 0) < COALESCE(quantity_tons, 20))
         ''')
         order_ids = [o['id'] for o in pending]
@@ -1697,19 +1740,42 @@ def handle_exception(e):
 
 @app.route('/api/ai/apply-recommendation', methods=['POST'])
 def apply_ai_recommendation():
-    """Apply an AI recommendation - assign the order to the recommended driver"""
+    """Apply an AI recommendation - assign a truck to an order with specific tonnage"""
     data = request.get_json()
 
     order_id = data.get('order_id')
     driver_id = data.get('driver_id')
     truck_id = data.get('truck_id')
     plant_id = data.get('plant_id')
+    contribution_tons = data.get('contribution_tons')  # Truck's daily capacity contribution
 
     # Get order details
     order = query_db('SELECT * FROM orders WHERE id = ?', (order_id,), one=True)
 
     if not order:
         return jsonify({'success': False, 'error': 'Order not found'}), 404
+
+    # Calculate how much is already assigned to this order
+    already_assigned = query_db('''
+        SELECT COALESCE(SUM(quantity_tons), 0) as total
+        FROM loads_active
+        WHERE job_id = ? AND status != 'cancelled'
+    ''', (order['job_id'],), one=True)['total']
+
+    order_total = float(order['quantity_tons'] or 0)
+    tons_remaining = max(0, order_total - already_assigned)
+
+    # Determine quantity for this load
+    # Use contribution_tons if provided, otherwise use remaining order quantity
+    if contribution_tons is not None and contribution_tons > 0:
+        # Use the truck's contribution (daily capacity), but don't exceed remaining
+        load_quantity = min(float(contribution_tons), tons_remaining)
+    else:
+        # Legacy behavior: assign full remaining quantity
+        load_quantity = tons_remaining
+
+    if load_quantity <= 0:
+        return jsonify({'success': False, 'error': 'No remaining tonnage to assign'}), 400
 
     # Create load from order
     today = datetime.datetime.now()
@@ -1727,10 +1793,19 @@ def apply_ai_recommendation():
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'assigned', CURRENT_TIMESTAMP, ?)
     ''', (load_number, driver_id, truck_id,
           order['job_id'], plant_id or order['plant_id'], order['pickup_location_id'],
-          order['material_id'], order['quantity_tons'], order['notes']), commit=True)
+          order['material_id'], load_quantity, order['notes']), commit=True)
 
-    # Update order status
-    query_db('UPDATE orders SET status = "assigned" WHERE id = ?', (order_id,), commit=True)
+    # Calculate new total assigned after this load
+    new_total_assigned = already_assigned + load_quantity
+
+    # Update order status based on coverage
+    # Only mark as "assigned" when fully covered, otherwise "partial"
+    if new_total_assigned >= order_total:
+        new_status = 'assigned'
+    else:
+        new_status = 'partial'
+
+    query_db('UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id), commit=True)
 
     # Update recommendation status
     query_db('''
@@ -1738,7 +1813,14 @@ def apply_ai_recommendation():
         WHERE order_id = ? AND status = "pending"
     ''', (order_id,), commit=True)
 
-    return jsonify({'success': True, 'load_number': load_number})
+    return jsonify({
+        'success': True,
+        'load_number': load_number,
+        'quantity_assigned': load_quantity,
+        'total_assigned': new_total_assigned,
+        'order_total': order_total,
+        'order_status': new_status
+    })
 
 @app.route('/api/ai/recommendations')
 def get_ai_recommendations():
