@@ -1506,13 +1506,17 @@ def ai_optimize_dispatch():
     driver_loads = {}
     driver_assigned_tons = {}
     for driver in available_drivers:
-        load_count = query_db('''
+        load_count_row = query_db('''
             SELECT COUNT(*) as count, COALESCE(SUM(quantity_tons), 0) as tons
             FROM loads_active
             WHERE driver_id = ? AND DATE(assigned_at) = ?
         ''', (driver['driver_id'], today), one=True)
-        driver_loads[str(driver['driver_id'])] = load_count['count']
-        driver_assigned_tons[str(driver['driver_id'])] = load_count['tons']
+        if load_count_row:
+            driver_loads[str(driver['driver_id'])] = load_count_row['count'] or 0
+            driver_assigned_tons[str(driver['driver_id'])] = load_count_row['tons'] or 0
+        else:
+            driver_loads[str(driver['driver_id'])] = 0
+            driver_assigned_tons[str(driver['driver_id'])] = 0
 
     for order_id in order_ids:
         order = query_db('''
@@ -1692,7 +1696,8 @@ def ai_optimize_dispatch():
                 'primary_driver_name': primary['driver_name'],
                 'primary_truck_id': primary['truck_id'],
                 'primary_truck_number': primary['truck_number'],
-                'primary_tons_per_day': primary.get('tons_per_day', 80),
+                'primary_tons_per_day': primary.get('tons_per_day', 100),
+                'primary_capacity_tons': primary.get('capacity_tons', 25),
                 # All assigned trucks with load details
                 'assigned_trucks': [
                     {
@@ -1700,7 +1705,8 @@ def ai_optimize_dispatch():
                         'driver_name': t['driver_name'],
                         'truck_id': t['truck_id'],
                         'truck_number': t['truck_number'],
-                        'tons_per_day': t.get('tons_per_day', 80),
+                        'capacity_tons': t.get('capacity_tons', 25),
+                        'tons_per_day': t.get('tons_per_day', 100),
                         'contribution_tons': t.get('contribution_tons', 0),
                         'loads_needed': t.get('loads_needed', 1),
                         'is_partial_day': t.get('is_partial_day', False),
@@ -1713,7 +1719,9 @@ def ai_optimize_dispatch():
                 'plant_name': order.get('plant_name'),
                 'confidence': primary.get('confidence', 50),
                 'quality': primary.get('recommendation_quality', 'unknown'),
-                'reasoning': ' | '.join(reasoning_parts[:4])
+                'reasoning': ' | '.join(reasoning_parts[:4]),
+                # Estimated cost: $12/ton for local hauls (rough estimate)
+                'estimated_cost': round(tons_remaining * 12, 2)
             }
 
             recommendations.append(order_recommendation)
@@ -1768,6 +1776,8 @@ def handle_exception(e):
 def apply_ai_recommendation():
     """Apply an AI recommendation - assign a truck to an order with specific tonnage"""
     data = request.get_json()
+    """Apply an AI recommendation - assign the order to the recommended driver"""
+    data = request.get_json() or {}
 
     order_id = data.get('order_id')
     driver_id = data.get('driver_id')
@@ -1775,10 +1785,18 @@ def apply_ai_recommendation():
     plant_id = data.get('plant_id')
     contribution_tons = data.get('contribution_tons')  # Truck's daily capacity contribution
 
-    # Get order details
-    order = query_db('SELECT * FROM orders WHERE id = ?', (order_id,), one=True)
+    # Validate required fields
+    if not order_id:
+        return jsonify({'success': False, 'error': 'Missing order_id'}), 400
+    if not driver_id:
+        return jsonify({'success': False, 'error': 'Missing driver_id'}), 400
+    if not truck_id:
+        return jsonify({'success': False, 'error': 'Missing truck_id'}), 400
 
-    if not order:
+    # Get order details
+    order_row = query_db('SELECT * FROM orders WHERE id = ?', (order_id,), one=True)
+
+    if not order_row:
         return jsonify({'success': False, 'error': 'Order not found'}), 404
 
     # Calculate how much is already assigned to this order
@@ -1802,13 +1820,16 @@ def apply_ai_recommendation():
 
     if load_quantity <= 0:
         return jsonify({'success': False, 'error': 'No remaining tonnage to assign'}), 400
+    # Convert to dict for safe access
+    order = dict(order_row)
 
     # Create load from order
     today = datetime.datetime.now()
-    load_count = query_db(
+    load_count_row = query_db(
         'SELECT COUNT(*) as count FROM loads_active WHERE DATE(assigned_at) = ?',
         (today.date(),), one=True
-    )['count']
+    )
+    load_count = dict(load_count_row)['count'] if load_count_row else 0
     load_number = f"{today.strftime('%Y%m%d')}-{int(driver_id):03d}-{load_count + 1:02d}"
 
     query_db('''
@@ -1820,6 +1841,8 @@ def apply_ai_recommendation():
     ''', (load_number, driver_id, truck_id,
           order['job_id'], plant_id or order['plant_id'], order['pickup_location_id'],
           order['material_id'], load_quantity, order['notes']), commit=True)
+          order.get('job_id'), plant_id or order.get('plant_id'), order.get('pickup_location_id'),
+          order.get('material_id'), order.get('quantity_tons', 25), order.get('notes', '')), commit=True)
 
     # Calculate new total assigned after this load
     new_total_assigned = already_assigned + load_quantity

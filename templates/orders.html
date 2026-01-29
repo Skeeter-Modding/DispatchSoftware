@@ -677,6 +677,48 @@ function showAIRecommendations(recommendations) {
         }
 
         listGroup.appendChild(listItem);
+        // Safe access with defaults
+        const orderNumber = rec.order_number || 'Unknown';
+        const material = rec.material || 'Material';
+        const pickup = rec.pickup_location || 'Pickup';
+        const destination = rec.destination || 'Destination';
+        const reasoning = rec.reasoning || '';
+        const confidence = typeof rec.confidence === 'number' ? rec.confidence : 50;
+        const tonsRemaining = rec.tons_remaining || 0;
+        const estCost = rec.estimated_cost || Math.round(tonsRemaining * 12);
+        const orderId = rec.order_id;
+        const driverId = rec.primary_driver_id;
+        const truckId = rec.primary_truck_id;
+        const plantId = rec.plant_id || null;
+        const driverName = rec.primary_driver_name || 'Driver';
+        const capacityTons = rec.primary_capacity_tons || 25;
+        const loadsNeeded = rec.assigned_trucks && rec.assigned_trucks[0] ? rec.assigned_trucks[0].loads_needed : Math.ceil(tonsRemaining / capacityTons);
+
+        // Determine confidence color
+        let confidenceColor = 'danger';
+        if (confidence >= 70) confidenceColor = 'success';
+        else if (confidence >= 50) confidenceColor = 'warning';
+
+        html += `
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>Order ${orderNumber}</strong><br>
+                        <span class="text-muted">
+                            ${material} | ${pickup} | ${destination}
+                        </span><br>
+                        <small class="text-muted">${reasoning}</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-${confidenceColor} mb-1">${confidence.toFixed(1)}% CONFIDENCE</span><br>
+                        <span class="badge bg-info mb-1">$${estCost.toLocaleString()} EST. COST</span><br>
+                        <button class="btn btn-sm btn-primary mt-1" onclick="applyRecommendation(${orderId}, ${driverId}, ${truckId}, ${plantId})">
+                            APPLY
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
     });
 
     // Create modal structure (static content only, no user data)
@@ -900,6 +942,39 @@ function applyAllRecommendations() {
 
     Promise.all(allPromises).then(() => {
         alert('Applied ' + applied + ' of ' + totalAssignments + ' truck assignments!');
+    let failed = 0;
+    const promises = window.currentRecommendations.map(rec => {
+        return fetch('/api/ai/apply-recommendation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                order_id: rec.order_id,
+                driver_id: rec.primary_driver_id,
+                truck_id: rec.primary_truck_id,
+                plant_id: rec.plant_id || null
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                applied++;
+            } else {
+                failed++;
+                console.error('Failed to apply recommendation:', data.error);
+            }
+        })
+        .catch(err => {
+            failed++;
+            console.error('Error applying recommendation:', err);
+        });
+    });
+
+    Promise.all(promises).then(() => {
+        if (failed > 0) {
+            alert(`Applied ${applied} recommendations. ${failed} failed.`);
+        } else {
+            alert(`Successfully applied ${applied} recommendations!`);
+        }
         location.reload();
     });
 }
