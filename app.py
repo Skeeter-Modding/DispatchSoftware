@@ -15,6 +15,15 @@ import os
 # Import configuration
 import config
 
+# Turso/libsql for cloud database (production)
+if config.USE_TURSO:
+    try:
+        import libsql_experimental as libsql
+        print(f"Turso database configured: {config.TURSO_DATABASE_URL}")
+    except ImportError:
+        print("WARNING: libsql not installed, falling back to local SQLite")
+        config.USE_TURSO = False
+
 # Groq AI Integration
 try:
     from groq import Groq
@@ -44,10 +53,11 @@ app.config['SECRET_KEY'] = config.SECRET_KEY
 # Database path from config (supports DATABASE_PATH environment variable)
 DATABASE = config.DATABASE_PATH
 
-# Ensure database directory exists
-db_dir = os.path.dirname(DATABASE)
-if db_dir and not os.path.exists(db_dir):
-    os.makedirs(db_dir, exist_ok=True)
+# Ensure database directory exists (for local SQLite fallback)
+if not config.USE_TURSO:
+    db_dir = os.path.dirname(DATABASE)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
 
 # Security headers
 @app.after_request
@@ -62,8 +72,18 @@ def add_security_headers(response):
     return response
 
 def get_db():
-    """Get database connection"""
-    conn = sqlite3.connect(DATABASE)
+    """Get database connection - supports Turso (cloud) or local SQLite"""
+    if config.USE_TURSO:
+        # Turso cloud database connection
+        conn = libsql.connect(
+            "dispatchsoftware",
+            sync_url=config.TURSO_DATABASE_URL,
+            auth_token=config.TURSO_AUTH_TOKEN
+        )
+        conn.sync()  # Sync with remote
+    else:
+        # Local SQLite fallback
+        conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -71,9 +91,21 @@ def init_db():
     """Initialize database with schema"""
     conn = get_db()
     with open(config.SCHEMA_PATH, 'r') as f:
-        conn.executescript(f.read())
+        schema = f.read()
+        # Split schema into individual statements for Turso compatibility
+        statements = [s.strip() for s in schema.split(';') if s.strip()]
+        for statement in statements:
+            try:
+                conn.execute(statement)
+            except Exception as e:
+                # Ignore "table already exists" errors
+                if 'already exists' not in str(e).lower():
+                    print(f"Schema warning: {e}")
     conn.commit()
+    if config.USE_TURSO:
+        conn.sync()
     conn.close()
+    print("Database initialized successfully")
 
 def query_db(query, args=(), one=False, commit=False):
     """Helper function for database queries"""
@@ -83,6 +115,8 @@ def query_db(query, args=(), one=False, commit=False):
 
     if commit:
         conn.commit()
+        if config.USE_TURSO:
+            conn.sync()  # Sync changes to Turso cloud
         result = cur.lastrowid
     else:
         result = cur.fetchone() if one else cur.fetchall()
@@ -648,7 +682,9 @@ def dispatch():
 
     # Get active assignments for today
     active_assignments = query_db('''
-        SELECT a.*, d.name as driver_name, d.phone, t.truck_number, tr.trailer_number
+        SELECT a.*, d.name as driver_name, d.phone,
+               t.truck_number, t.truck_name,
+               tr.trailer_number
         FROM assignments a
         JOIN drivers d ON a.driver_id = d.id
         JOIN trucks t ON a.truck_id = t.id

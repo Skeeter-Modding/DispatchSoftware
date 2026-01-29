@@ -2,7 +2,9 @@
 Configuration file for Smyrna Ready Mix Dispatch System
 
 Environment Variables (set these for production):
-- DATABASE_PATH: Path to SQLite database file (default: database/srm_dispatch.db)
+- TURSO_DATABASE_URL: Turso database URL (e.g., libsql://yourdb.turso.io)
+- TURSO_AUTH_TOKEN: Turso authentication token
+- DATABASE_PATH: Path to SQLite database file (fallback if Turso not configured)
 - SECRET_KEY: Flask secret key for session security
 - GROQ_API_KEY: API key for Groq AI integration
 - SAMSARA_API_TOKEN: API token for Samsara GPS integration
@@ -11,10 +13,22 @@ Environment Variables (set these for production):
 import os
 
 # =============================================================================
-# DATABASE CONFIGURATION
+# DATABASE CONFIGURATION - TURSO (RECOMMENDED FOR PRODUCTION)
 # =============================================================================
-# Use DATABASE_PATH environment variable for persistent storage across deployments
-# Example: export DATABASE_PATH=/var/data/srm_dispatch.db
+# Turso provides persistent SQLite-compatible cloud database
+# Set these environment variables in Render dashboard:
+#   TURSO_DATABASE_URL=libsql://dispatchsoftware-schoendd.aws-us-east-1.turso.io
+#   TURSO_AUTH_TOKEN=your-token-here
+TURSO_DATABASE_URL = os.environ.get('TURSO_DATABASE_URL')
+TURSO_AUTH_TOKEN = os.environ.get('TURSO_AUTH_TOKEN')
+
+# Check if Turso is configured
+USE_TURSO = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN)
+
+# =============================================================================
+# LOCAL DATABASE CONFIGURATION (FALLBACK)
+# =============================================================================
+# Used when Turso is not configured (local development)
 DATABASE_PATH = os.environ.get('DATABASE_PATH', 'database/srm_dispatch.db')
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), 'database', 'schema.sql')
 
