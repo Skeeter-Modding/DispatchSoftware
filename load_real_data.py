@@ -5,7 +5,10 @@ Load real Smyrna Ready Mix data into the dispatch system
 import sqlite3
 from datetime import date
 
-DATABASE = 'database/srm_dispatch.db'
+# Import configuration
+import config
+
+DATABASE = config.DATABASE_PATH
 
 def get_db():
     """Get database connection"""

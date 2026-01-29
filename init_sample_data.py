@@ -6,7 +6,10 @@ import sqlite3
 import os
 from datetime import datetime, date, timedelta
 
-DATABASE = 'database/srm_dispatch.db'
+# Import configuration
+import config
+
+DATABASE = config.DATABASE_PATH
 
 def get_db():
     """Get database connection"""

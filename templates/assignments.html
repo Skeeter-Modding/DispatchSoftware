@@ -202,12 +202,13 @@ function autoCreateFromDefaults() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            alert(data.message);
+        alert(data.message || 'Operation completed');
+        if (data.success && data.created > 0) {
             location.reload();
-        } else {
-            alert('Failed to create assignments');
         }
+    })
+    .catch(error => {
+        alert('Error: ' + error.message);
     });
 }
 </script>
