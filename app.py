@@ -2035,8 +2035,6 @@ def apply_ai_recommendation():
     ''', (load_number, driver_id, truck_id,
           order['job_id'], plant_id or order['plant_id'], order['pickup_location_id'],
           order['material_id'], load_quantity, order['notes']), commit=True)
-          order.get('job_id'), plant_id or order.get('plant_id'), order.get('pickup_location_id'),
-          order.get('material_id'), order.get('quantity_tons', 25), order.get('notes', '')), commit=True)
 
     # Calculate new total assigned after this load
     new_total_assigned = already_assigned + load_quantity
