@@ -709,12 +709,30 @@ class RouteKnowledge:
         "baxley": (31.7788, -82.3487),
         "alma": (31.5393, -82.4621),
 
+        # Additional SRM Plant locations
+        "rincon": (32.2960, -81.2354),
+        "guyton": (32.3368, -81.3976),
+        "midway": (31.8057, -81.4301),
+        "albany": (31.5785, -84.1557),
+        "ellabell": (32.1460, -81.4726),
+        "north_augusta": (33.5018, -81.9651),
+        "goose_creek": (32.9810, -80.0326),
+        "summerville": (33.0185, -80.1756),
+        "johns_island": (32.7041, -80.0579),
+
         # Quarry/Supplier locations
         "pembroke": (32.1368, -81.6245),      # Martin Marietta
         "lake_park": (30.6869, -83.1823),     # Martin Marietta
-        "folkston": (30.8307, -82.0098),      # E.R. Jahna
+        "folkston": (30.8307, -82.0098),      # E.R. Jahna (older location)
         "tillman_sc": (32.4538, -81.1217),    # Cemex SC
+        "tillman": (32.4538, -81.1217),       # Tillman pickup (alias)
         "bloomingdale": (32.1335, -81.3001),  # Local supplier
+
+        # Jahna/Fleming Sand Mine (KEY LOCATION - many hauls originate here)
+        "fleming": (31.8632, -81.4240),       # Jahna Sand Mine area
+        "jahna": (31.8632, -81.4240),         # E.R. Jahna Sand Mine
+        "jahna_fleming": (31.8632, -81.4240), # Alias
+        "deerfield": (31.8632, -81.4240),     # Deerfield Sand Mine (near Jahna)
     }
 
     # Pre-computed distances (miles) - one-way
@@ -748,6 +766,37 @@ class RouteKnowledge:
         ("macon", "dublin"): 55,
         ("dublin", "vidalia"): 40,
         ("vidalia", "savannah"): 85,
+
+        # Jahna/Fleming Sand Mine routes (KEY HAUL ROUTES)
+        # Fleming is near Midway/Hinesville - I-95 corridor
+        ("fleming", "savannah"): 28,
+        ("fleming", "brunswick"): 52,
+        ("fleming", "pooler"): 22,
+        ("fleming", "garden_city"): 25,
+        ("fleming", "bloomingdale"): 18,
+        ("fleming", "hinesville"): 8,
+        ("fleming", "midway"): 5,
+        ("fleming", "statesboro"): 48,
+        ("fleming", "rincon"): 30,
+        ("fleming", "guyton"): 35,
+        ("fleming", "richmond_hill"): 12,
+        ("fleming", "kingsland"): 75,
+        ("fleming", "ellabell"): 25,
+
+        # Jahna aliases (same as fleming)
+        ("jahna", "savannah"): 28,
+        ("jahna", "brunswick"): 52,
+        ("jahna", "pooler"): 22,
+        ("jahna", "garden_city"): 25,
+        ("jahna", "bloomingdale"): 18,
+        ("jahna", "hinesville"): 8,
+        ("jahna", "midway"): 5,
+        ("jahna", "statesboro"): 48,
+        ("jahna", "rincon"): 30,
+        ("jahna", "guyton"): 35,
+        ("jahna", "richmond_hill"): 12,
+        ("jahna", "kingsland"): 75,
+        ("jahna", "ellabell"): 25,
     }
 
     # Road condition factors

@@ -1839,6 +1839,8 @@ def ai_optimize_dispatch():
     # Build driver load counts and assigned tons for workload balancing
     driver_loads = {}
     driver_assigned_tons = {}
+    # Track tons recommended in THIS optimization run (not yet in database)
+    driver_recommended_tons = {}
     for driver in available_drivers:
         load_count_row = query_db('''
             SELECT COUNT(*) as count, COALESCE(SUM(quantity_tons), 0) as tons
@@ -1851,6 +1853,8 @@ def ai_optimize_dispatch():
         else:
             driver_loads[str(driver['driver_id'])] = 0
             driver_assigned_tons[str(driver['driver_id'])] = 0
+        # Initialize recommended tons tracking
+        driver_recommended_tons[str(driver['driver_id'])] = 0
 
     for order_id in order_ids:
         order = query_db('''
@@ -1959,7 +1963,9 @@ def ai_optimize_dispatch():
             # Skip trucks that are already maxed out for the day
             truck_daily_capacity = truck['tons_per_day']
             already_assigned = truck.get('already_assigned_tons', 0)
-            available_capacity = max(0, truck_daily_capacity - already_assigned)
+            # Also subtract tons already recommended in this optimization run
+            already_recommended = driver_recommended_tons.get(str(truck['driver_id']), 0)
+            available_capacity = max(0, truck_daily_capacity - already_assigned - already_recommended)
 
             if available_capacity <= 0:
                 continue
@@ -1980,6 +1986,12 @@ def ai_optimize_dispatch():
                 'is_partial_day': is_partial_day
             })
 
+        # Update recommended tons tracking so these trucks aren't double-booked for next order
+        for truck in assigned_trucks:
+            driver_key = str(truck['driver_id'])
+            contribution = truck.get('contribution_tons', 0)
+            driver_recommended_tons[driver_key] = driver_recommended_tons.get(driver_key, 0) + contribution
+
         # Calculate trucks needed
         avg_tons_per_truck = 80  # Conservative estimate
         if truck_scores and truck_scores[0].get('tons_per_day'):
@@ -1993,14 +2005,24 @@ def ai_optimize_dispatch():
             primary = assigned_trucks[0]
             productivity = primary.get('productivity', {})
 
+            # Get distance info for reasoning
+            route_distance = productivity.get('distance_miles', 0)
+            cycle_time_min = productivity.get('cycle_time_minutes', 0)
+            loads_per_day = productivity.get('loads_per_day', 4)
+
             reasoning_parts = []
-            reasoning_parts.append(f"Order: {total_quantity:.0f} tons, Remaining: {tons_remaining:.0f} tons")
+            # Show route distance and loads per day calculation
+            if route_distance > 0:
+                reasoning_parts.append(f"Route: {pickup}→{destination} ({route_distance:.0f}mi)")
+                reasoning_parts.append(f"{loads_per_day} loads/day ({cycle_time_min:.0f}min cycle)")
+            reasoning_parts.append(f"Order: {total_quantity:.0f}t, Need: {tons_remaining:.0f}t")
 
             if len(assigned_trucks) > 1:
                 # Show truck breakdown with loads
                 full_day_trucks = [t for t in assigned_trucks if not t.get('is_partial_day')]
                 partial_trucks = [t for t in assigned_trucks if t.get('is_partial_day')]
 
+                reasoning_parts.append(f"Multi-truck: {len(assigned_trucks)} drivers assigned")
                 if full_day_trucks:
                     reasoning_parts.append(f"{len(full_day_trucks)} full day truck(s)")
                 if partial_trucks:
@@ -2008,7 +2030,7 @@ def ai_optimize_dispatch():
                         reasoning_parts.append(f"{pt['driver_name']}: {pt.get('contribution_tons', 0):.0f}t ({pt.get('loads_needed', 1)} loads)")
             else:
                 loads = primary.get('loads_needed', int(tons_remaining / 22) + 1)
-                reasoning_parts.append(f"{primary['driver_name']}: {loads} loads ({primary.get('tons_per_day', 80):.0f}t/day capacity)")
+                reasoning_parts.append(f"{primary['driver_name']}: {loads} loads ({primary.get('tons_per_day', 80):.0f}t/day)")
 
             order_recommendation = {
                 'order_id': order_id,
@@ -2048,12 +2070,16 @@ def ai_optimize_dispatch():
                     }
                     for t in assigned_trucks
                 ],
+                # Route & Productivity metrics (distance-based calculation)
+                'distance_miles': route_distance,
+                'cycle_time_minutes': cycle_time_min,
+                'loads_per_day': loads_per_day,
                 # Metadata
                 'plant_id': order.get('plant_id'),
                 'plant_name': order.get('plant_name'),
                 'confidence': primary.get('confidence', 50),
                 'quality': primary.get('recommendation_quality', 'unknown'),
-                'reasoning': ' | '.join(reasoning_parts[:4]),
+                'reasoning': ' | '.join(reasoning_parts[:6]),  # Show more reasoning
                 # Estimated cost: $12/ton for local hauls (rough estimate)
                 'estimated_cost': round(tons_remaining * 12, 2)
             }
