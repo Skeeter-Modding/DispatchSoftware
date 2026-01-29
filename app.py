@@ -648,7 +648,9 @@ def dispatch():
 
     # Get active assignments for today
     active_assignments = query_db('''
-        SELECT a.*, d.name as driver_name, d.phone, t.truck_number, tr.trailer_number
+        SELECT a.*, d.name as driver_name, d.phone,
+               t.truck_number, t.truck_name,
+               tr.trailer_number
         FROM assignments a
         JOIN drivers d ON a.driver_id = d.id
         JOIN trucks t ON a.truck_id = t.id

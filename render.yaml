@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: dispatchsoftware
+    runtime: python
+    buildCommand: pip install -r requirements.txt && python init_db.py
+    startCommand: gunicorn app:app
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/srm_dispatch.db
+      - key: PYTHON_VERSION
+        value: "3.11"
+    disk:
+      name: dispatch-data
+      mountPath: /var/data
+      sizeGB: 1
