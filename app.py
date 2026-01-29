@@ -1839,6 +1839,8 @@ def ai_optimize_dispatch():
     # Build driver load counts and assigned tons for workload balancing
     driver_loads = {}
     driver_assigned_tons = {}
+    # Track tons recommended in THIS optimization run (not yet in database)
+    driver_recommended_tons = {}
     for driver in available_drivers:
         load_count_row = query_db('''
             SELECT COUNT(*) as count, COALESCE(SUM(quantity_tons), 0) as tons
@@ -1851,6 +1853,8 @@ def ai_optimize_dispatch():
         else:
             driver_loads[str(driver['driver_id'])] = 0
             driver_assigned_tons[str(driver['driver_id'])] = 0
+        # Initialize recommended tons tracking
+        driver_recommended_tons[str(driver['driver_id'])] = 0
 
     for order_id in order_ids:
         order = query_db('''
@@ -1959,7 +1963,9 @@ def ai_optimize_dispatch():
             # Skip trucks that are already maxed out for the day
             truck_daily_capacity = truck['tons_per_day']
             already_assigned = truck.get('already_assigned_tons', 0)
-            available_capacity = max(0, truck_daily_capacity - already_assigned)
+            # Also subtract tons already recommended in this optimization run
+            already_recommended = driver_recommended_tons.get(str(truck['driver_id']), 0)
+            available_capacity = max(0, truck_daily_capacity - already_assigned - already_recommended)
 
             if available_capacity <= 0:
                 continue
@@ -1979,6 +1985,12 @@ def ai_optimize_dispatch():
                 'loads_needed': loads_needed,
                 'is_partial_day': is_partial_day
             })
+
+        # Update recommended tons tracking so these trucks aren't double-booked for next order
+        for truck in assigned_trucks:
+            driver_key = str(truck['driver_id'])
+            contribution = truck.get('contribution_tons', 0)
+            driver_recommended_tons[driver_key] = driver_recommended_tons.get(driver_key, 0) + contribution
 
         # Calculate trucks needed
         avg_tons_per_truck = 80  # Conservative estimate
