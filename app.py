@@ -534,6 +534,37 @@ def update_load_status():
 
     return update_load_status_by_id(int(load_id))
 
+@app.route('/loads/<int:load_id>/delete', methods=['POST'])
+def delete_load(load_id):
+    """Delete/cancel an active load"""
+    # Get the load first
+    load = query_db('SELECT * FROM loads_active WHERE id = ?', (load_id,), one=True)
+    if not load:
+        return jsonify({'success': False, 'message': 'Load not found'})
+
+    # Track as cancelled for the driver's daily summary
+    if load['driver_id'] and load['assigned_at']:
+        try:
+            assigned_date = load['assigned_at'].split(' ')[0] if ' ' in load['assigned_at'] else load['assigned_at']
+            query_db('''
+                UPDATE daily_driver_summary
+                SET cancelled_loads = COALESCE(cancelled_loads, 0) + 1
+                WHERE driver_id = ? AND date = ?
+            ''', (load['driver_id'], assigned_date), commit=True)
+        except:
+            pass  # Summary may not exist yet
+
+    # Delete the load
+    query_db('DELETE FROM loads_active WHERE id = ?', (load_id,), commit=True)
+
+    return jsonify({'success': True, 'message': 'Load cancelled'})
+
+@app.route('/loads/clear-all', methods=['POST'])
+def clear_all_loads():
+    """Clear all active loads (admin function)"""
+    query_db('DELETE FROM loads_active', commit=True)
+    return jsonify({'success': True, 'message': 'All active loads cleared'})
+
 @app.route('/loads/add', methods=['POST'])
 def add_single_load():
     """Add a single load"""

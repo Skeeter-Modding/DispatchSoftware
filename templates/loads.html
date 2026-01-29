@@ -3,9 +3,14 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col-12">
-        <h1 class="h3 mb-3">
-            <i class="fas fa-route me-2 text-primary"></i>Load Tracking
-        </h1>
+        <div class="d-flex justify-content-between align-items-center">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-route me-2 text-primary"></i>Load Tracking
+            </h1>
+            <button class="btn btn-outline-danger" onclick="clearAllLoads()">
+                <i class="fas fa-trash-alt me-1"></i>Clear All Loads
+            </button>
+        </div>
     </div>
 </div>
 
@@ -90,6 +95,8 @@
                                             <li><a class="dropdown-item" href="#" onclick="updateLoadStatus({{ load.id }}, 'delivering')">Delivering</a></li>
                                             <li><hr class="dropdown-divider"></li>
                                             <li><a class="dropdown-item text-success" href="#" onclick="updateLoadStatus({{ load.id }}, 'complete')">Complete</a></li>
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li><a class="dropdown-item text-danger" href="#" onclick="deleteLoad({{ load.id }})"><i class="fas fa-trash me-1"></i>Cancel/Delete</a></li>
                                         </ul>
                                     </div>
                                 </td>
@@ -145,6 +152,46 @@ function updateLoadStatus(loadId, status) {
     .catch(error => {
         console.error('Error:', error);
         alert('Failed to update status');
+    });
+}
+
+function deleteLoad(loadId) {
+    if (!confirm('Are you sure you want to cancel/delete this load?')) return;
+
+    fetch(`/loads/${loadId}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed to delete load: ' + (data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to delete load');
+    });
+}
+
+function clearAllLoads() {
+    if (!confirm('Are you sure you want to clear ALL active loads? This cannot be undone!')) return;
+    if (!confirm('This will delete all loads. Are you ABSOLUTELY sure?')) return;
+
+    fetch('/loads/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('All loads cleared');
+            location.reload();
+        } else {
+            alert('Failed to clear loads');
+        }
     });
 }
 </script>
