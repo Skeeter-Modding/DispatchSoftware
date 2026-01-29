@@ -1478,6 +1478,83 @@ def delete_driver_default(default_id):
     query_db('DELETE FROM driver_truck_defaults WHERE id = ?', (default_id,), commit=True)
     return jsonify({'success': True})
 
+@app.route('/driver-defaults/bulk-create', methods=['POST'])
+def bulk_create_driver_defaults():
+    """Bulk create driver defaults from fleet roster"""
+    # SRM Fleet driver-truck assignments
+    FLEET_ASSIGNMENTS = [
+        ("THOR WAYMAN", "23060", "DT-59"),
+        ("ALBERT MITCHELL", "23066", "DT65"),
+        ("DAVID POWELL", "23068", "DT-67"),
+        ("TALLY BUTLER", "24067", "DT-87"),
+        ("KEITH CROFT", "24068", "DT88"),
+        ("JEROME POLITE", "25046", "DT-107"),
+        ("CLEVELAND TOLBERT", "25049", "DT-111"),
+        ("RYAN REED", "25052", "BT-114"),
+        ("DONNELL DAVIS", "825", None),
+        ("KIMBERLY ROBERTS", "828", None),
+        ("DONALD WINTER", "829", None),
+        ("JOSEPH K. SARGENT", "SG24", None),
+        ("LONNIE THOMPSON", "SG27", None),
+        ("RACHEL HUTTO", "SG28", None),
+        ("NAQUETIG LEWIS", "SG9", "DT11"),
+        ("DAVID HOUSTON", "T10", "WT-14"),
+        ("GLENN GOODNO", "T7", None),
+        ("KIMBERLY HILL", "W10", None),
+        ("LESLEY MURPHY", "W14", "D03"),
+        ("RENA ABROMOWITZ", "W19", None),
+        ("JIMMY LAND", "W23", "WT-13"),
+        ("BILL RUMPTZ", "W28", None),
+        ("DORRELL GRANT", "W29", None),
+        ("ALICIA SAMPSON", "W30", None),
+        ("QUADASHA JACKSON", "W31", None),
+    ]
+
+    created = 0
+    errors = []
+
+    for driver_name, truck_number, trailer_number in FLEET_ASSIGNMENTS:
+        # Find driver by name
+        driver = query_db('SELECT id FROM drivers WHERE UPPER(name) = UPPER(?)', (driver_name,), one=True)
+        if not driver:
+            errors.append(f"Driver not found: {driver_name}")
+            continue
+
+        # Find truck by number
+        truck = query_db('SELECT id FROM trucks WHERE truck_number = ?', (truck_number,), one=True)
+        if not truck:
+            errors.append(f"Truck not found: {truck_number}")
+            continue
+
+        # Find trailer if specified
+        trailer_id = None
+        if trailer_number:
+            trailer = query_db('SELECT id FROM trailers WHERE trailer_number LIKE ?', (f"%{trailer_number}%",), one=True)
+            if trailer:
+                trailer_id = trailer['id']
+
+        # Check if default already exists
+        existing = query_db('SELECT id FROM driver_truck_defaults WHERE driver_id = ?', (driver['id'],), one=True)
+        if existing:
+            continue
+
+        # Create default
+        try:
+            query_db('''
+                INSERT INTO driver_truck_defaults (driver_id, truck_id, trailer_id, is_active)
+                VALUES (?, ?, ?, 1)
+            ''', (driver['id'], truck['id'], trailer_id), commit=True)
+            created += 1
+        except Exception as e:
+            errors.append(f"{driver_name}: {str(e)}")
+
+    return jsonify({
+        'success': True,
+        'created': created,
+        'errors': errors,
+        'message': f'Created {created} driver defaults' + (f' with {len(errors)} errors' if errors else '')
+    })
+
 @app.route('/assignments/auto-create', methods=['POST'])
 def auto_create_assignments():
     """Auto-create today's assignments from driver defaults"""
