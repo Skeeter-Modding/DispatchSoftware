@@ -2133,6 +2133,9 @@ def apply_ai_recommendation():
     if not order_row:
         return jsonify({'success': False, 'error': 'Order not found'}), 404
 
+    # Convert to dict for safe access
+    order = dict(order_row)
+
     # Calculate how much is already assigned to this order
     already_assigned = query_db('''
         SELECT COALESCE(SUM(quantity_tons), 0) as total
@@ -2154,8 +2157,6 @@ def apply_ai_recommendation():
 
     if load_quantity <= 0:
         return jsonify({'success': False, 'error': 'No remaining tonnage to assign'}), 400
-    # Convert to dict for safe access
-    order = dict(order_row)
 
     # Create load from order
     today = datetime.datetime.now()
