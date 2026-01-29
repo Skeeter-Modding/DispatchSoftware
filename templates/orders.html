@@ -324,6 +324,23 @@ const assignmentsData = [
     {% endfor %}
 ];
 
+// HTML escape utility to prevent XSS
+function escapeHtml(unsafe) {
+    if (unsafe === null || unsafe === undefined) return '';
+    return String(unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// Validate and convert to integer, returns 0 if invalid
+function safeInt(value) {
+    const num = parseInt(value, 10);
+    return isNaN(num) ? 0 : num;
+}
+
 function showAddOrderModal() {
     const modal = new bootstrap.Modal(document.getElementById('addOrderModal'));
     modal.show();
@@ -526,59 +543,141 @@ function runAIOptimization() {
 }
 
 function showAIRecommendations(recommendations) {
-    let html = '<div class="list-group">';
-    recommendations.forEach(rec => {
-        html += `
-            <div class="list-group-item">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <strong>Order ${rec.order_number}</strong><br>
-                        <span class="text-muted">
-                            <i class="fas fa-user me-1"></i>${rec.driver_name} |
-                            <i class="fas fa-truck me-1"></i>${rec.truck_number} |
-                            <i class="fas fa-industry me-1"></i>${rec.plant_name}
-                        </span><br>
-                        <small class="text-muted">${rec.reasoning}</small>
-                    </div>
-                    <div class="text-end">
-                        <span class="badge bg-success mb-1">${rec.confidence}% confidence</span><br>
-                        <span class="badge bg-info">$${rec.estimated_cost} est. cost</span><br>
-                        <button class="btn btn-sm btn-primary mt-2" onclick="applyRecommendation(${rec.order_id}, ${rec.driver_id}, ${rec.truck_id}, ${rec.plant_id})">
-                            <i class="fas fa-check me-1"></i>Apply
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    html += '</div>';
+    // Build list group using DOM methods to prevent XSS
+    const listGroup = document.createElement('div');
+    listGroup.className = 'list-group';
 
-    // Create and show modal
-    const modalHtml = `
-        <div class="modal fade" id="aiRecommendationsModal" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content">
-                    <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title"><i class="fas fa-robot me-2"></i>AI Recommendations</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">${html}</div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        <button type="button" class="btn btn-success" onclick="applyAllRecommendations()">
-                            <i class="fas fa-check-double me-1"></i>Apply All
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    recommendations.forEach(rec => {
+        // Validate numeric IDs to ensure no user content in onclick
+        const orderId = safeInt(rec.order_id);
+        const driverId = safeInt(rec.driver_id);
+        const truckId = safeInt(rec.truck_id);
+        const plantId = safeInt(rec.plant_id);
+        const confidence = safeInt(rec.confidence);
+        const estimatedCost = parseFloat(rec.estimated_cost) || 0;
+
+        const listItem = document.createElement('div');
+        listItem.className = 'list-group-item';
+
+        const flexContainer = document.createElement('div');
+        flexContainer.className = 'd-flex justify-content-between align-items-start';
+
+        // Left side content
+        const leftDiv = document.createElement('div');
+
+        const orderStrong = document.createElement('strong');
+        orderStrong.textContent = 'Order ' + escapeHtml(rec.order_number);
+        leftDiv.appendChild(orderStrong);
+        leftDiv.appendChild(document.createElement('br'));
+
+        const detailsSpan = document.createElement('span');
+        detailsSpan.className = 'text-muted';
+        detailsSpan.innerHTML = '<i class="fas fa-user me-1"></i>';
+        detailsSpan.appendChild(document.createTextNode(escapeHtml(rec.driver_name) + ' | '));
+        const truckIcon = document.createElement('i');
+        truckIcon.className = 'fas fa-truck me-1';
+        detailsSpan.appendChild(truckIcon);
+        detailsSpan.appendChild(document.createTextNode(escapeHtml(rec.truck_number) + ' | '));
+        const plantIcon = document.createElement('i');
+        plantIcon.className = 'fas fa-industry me-1';
+        detailsSpan.appendChild(plantIcon);
+        detailsSpan.appendChild(document.createTextNode(escapeHtml(rec.plant_name)));
+        leftDiv.appendChild(detailsSpan);
+        leftDiv.appendChild(document.createElement('br'));
+
+        const reasoningSmall = document.createElement('small');
+        reasoningSmall.className = 'text-muted';
+        reasoningSmall.textContent = rec.reasoning || '';
+        leftDiv.appendChild(reasoningSmall);
+
+        // Right side content
+        const rightDiv = document.createElement('div');
+        rightDiv.className = 'text-end';
+
+        const confidenceBadge = document.createElement('span');
+        confidenceBadge.className = 'badge bg-success mb-1';
+        confidenceBadge.textContent = confidence + '% confidence';
+        rightDiv.appendChild(confidenceBadge);
+        rightDiv.appendChild(document.createElement('br'));
+
+        const costBadge = document.createElement('span');
+        costBadge.className = 'badge bg-info';
+        costBadge.textContent = '$' + estimatedCost.toFixed(2) + ' est. cost';
+        rightDiv.appendChild(costBadge);
+        rightDiv.appendChild(document.createElement('br'));
+
+        const applyBtn = document.createElement('button');
+        applyBtn.className = 'btn btn-sm btn-primary mt-2';
+        applyBtn.innerHTML = '<i class="fas fa-check me-1"></i>Apply';
+        // Use closure with validated integer IDs only
+        applyBtn.addEventListener('click', function() {
+            applyRecommendation(orderId, driverId, truckId, plantId);
+        });
+        rightDiv.appendChild(applyBtn);
+
+        flexContainer.appendChild(leftDiv);
+        flexContainer.appendChild(rightDiv);
+        listItem.appendChild(flexContainer);
+        listGroup.appendChild(listItem);
+    });
+
+    // Create modal structure (static content only, no user data)
+    const modalDiv = document.createElement('div');
+    modalDiv.className = 'modal fade';
+    modalDiv.id = 'aiRecommendationsModal';
+    modalDiv.tabIndex = -1;
+
+    const modalDialog = document.createElement('div');
+    modalDialog.className = 'modal-dialog modal-lg';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
+
+    // Modal header
+    const modalHeader = document.createElement('div');
+    modalHeader.className = 'modal-header bg-success text-white';
+    const modalTitle = document.createElement('h5');
+    modalTitle.className = 'modal-title';
+    modalTitle.innerHTML = '<i class="fas fa-robot me-2"></i>AI Recommendations';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn-close btn-close-white';
+    closeBtn.setAttribute('data-bs-dismiss', 'modal');
+    modalHeader.appendChild(modalTitle);
+    modalHeader.appendChild(closeBtn);
+
+    // Modal body
+    const modalBody = document.createElement('div');
+    modalBody.className = 'modal-body';
+    modalBody.appendChild(listGroup);
+
+    // Modal footer
+    const modalFooter = document.createElement('div');
+    modalFooter.className = 'modal-footer';
+    const closeFooterBtn = document.createElement('button');
+    closeFooterBtn.type = 'button';
+    closeFooterBtn.className = 'btn btn-secondary';
+    closeFooterBtn.setAttribute('data-bs-dismiss', 'modal');
+    closeFooterBtn.textContent = 'Close';
+    const applyAllBtn = document.createElement('button');
+    applyAllBtn.type = 'button';
+    applyAllBtn.className = 'btn btn-success';
+    applyAllBtn.innerHTML = '<i class="fas fa-check-double me-1"></i>Apply All';
+    applyAllBtn.addEventListener('click', applyAllRecommendations);
+    modalFooter.appendChild(closeFooterBtn);
+    modalFooter.appendChild(applyAllBtn);
+
+    modalContent.appendChild(modalHeader);
+    modalContent.appendChild(modalBody);
+    modalContent.appendChild(modalFooter);
+    modalDialog.appendChild(modalContent);
+    modalDiv.appendChild(modalDialog);
 
     // Remove existing modal if any
     const existing = document.getElementById('aiRecommendationsModal');
     if (existing) existing.remove();
 
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    document.body.appendChild(modalDiv);
     const modal = new bootstrap.Modal(document.getElementById('aiRecommendationsModal'));
     modal.show();
 
@@ -587,14 +686,25 @@ function showAIRecommendations(recommendations) {
 }
 
 function applyRecommendation(orderId, driverId, truckId, plantId) {
+    // Validate all IDs are integers (defense-in-depth)
+    const safeOrderId = safeInt(orderId);
+    const safeDriverId = safeInt(driverId);
+    const safeTruckId = safeInt(truckId);
+    const safePlantId = safeInt(plantId);
+
+    if (!safeOrderId || !safeDriverId || !safeTruckId || !safePlantId) {
+        alert('Invalid recommendation data');
+        return;
+    }
+
     fetch('/api/ai/apply-recommendation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            order_id: orderId,
-            driver_id: driverId,
-            truck_id: truckId,
-            plant_id: plantId
+            order_id: safeOrderId,
+            driver_id: safeDriverId,
+            truck_id: safeTruckId,
+            plant_id: safePlantId
         })
     })
     .then(response => response.json())
@@ -624,14 +734,24 @@ function applyAllRecommendations() {
 
     let applied = 0;
     const promises = window.currentRecommendations.map(rec => {
+        // Validate all IDs are integers
+        const safeOrderId = safeInt(rec.order_id);
+        const safeDriverId = safeInt(rec.driver_id);
+        const safeTruckId = safeInt(rec.truck_id);
+        const safePlantId = safeInt(rec.plant_id);
+
+        if (!safeOrderId || !safeDriverId || !safeTruckId || !safePlantId) {
+            return Promise.resolve(); // Skip invalid recommendations
+        }
+
         return fetch('/api/ai/apply-recommendation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                order_id: rec.order_id,
-                driver_id: rec.driver_id,
-                truck_id: rec.truck_id,
-                plant_id: rec.plant_id
+                order_id: safeOrderId,
+                driver_id: safeDriverId,
+                truck_id: safeTruckId,
+                plant_id: safePlantId
             })
         })
         .then(response => response.json())
