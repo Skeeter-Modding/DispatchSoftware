@@ -1,55 +1,76 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
 <div class="row mb-4">
     <div class="col-12">
         <h1 class="h3 mb-3">
-            <i class="fas fa-satellite-dish me-2 text-primary"></i>Samsara Integration - Auto Tracking
+            <i class="fas fa-satellite-dish me-2 text-primary"></i>Samsara GPS Integration
+            <span class="badge bg-warning text-dark ms-2">DEMO MODE</span>
         </h1>
+        <p class="text-muted">Real-time fleet tracking with JONEL Access Unlimited integration ready</p>
     </div>
 </div>
 
+<!-- Stats Row -->
 <div class="row mb-4">
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card stats-card stats-card-primary">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="text-uppercase mb-1">Tracking Active</h6>
-                        <h2 class="mb-0">{{ loads|length }}</h2>
+                        <h6 class="text-uppercase mb-1">Vehicles Online</h6>
+                        <h2 class="mb-0" id="vehiclesOnline">-</h2>
                     </div>
                     <div class="icon">
-                        <i class="fas fa-satellite fa-2x"></i>
+                        <i class="fas fa-truck fa-2x"></i>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card stats-card stats-card-success">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="text-uppercase mb-1">Samsara Devices</h6>
-                        <h2 class="mb-0">{{ loads|selectattr('samara_device_id')|list|length }}</h2>
+                        <h6 class="text-uppercase mb-1">Engines Running</h6>
+                        <h2 class="mb-0" id="enginesOn">-</h2>
                     </div>
                     <div class="icon">
-                        <i class="fas fa-microchip fa-2x"></i>
+                        <i class="fas fa-power-off fa-2x"></i>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
+        <div class="card stats-card stats-card-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Geofences</h6>
+                        <h2 class="mb-0" id="geofenceCount">-</h2>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-map-marker-alt fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
         <div class="card stats-card stats-card-warning">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="text-uppercase mb-1">Status Updates</h6>
-                        <h2 class="mb-0" id="updateCount">0</h2>
+                        <h6 class="text-uppercase mb-1">Last Update</h6>
+                        <h6 class="mb-0" id="lastUpdate">-</h6>
                     </div>
                     <div class="icon">
-                        <i class="fas fa-sync fa-2x"></i>
+                        <i class="fas fa-clock fa-2x"></i>
                     </div>
                 </div>
             </div>
@@ -57,70 +78,64 @@
     </div>
 </div>
 
-<!-- Integration Status -->
+<!-- API Status Banner -->
 <div class="row mb-4">
     <div class="col-12">
+        <div class="alert alert-info d-flex justify-content-between align-items-center">
+            <div>
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Mock API Mode:</strong> This demo uses simulated Samsara API responses.
+                Replace with real API key to connect to live fleet data.
+            </div>
+            <div>
+                <span class="badge bg-success me-2" id="apiStatus">
+                    <i class="fas fa-check-circle me-1"></i>API Connected
+                </span>
+                <button class="btn btn-sm btn-primary" onclick="refreshData()">
+                    <i class="fas fa-sync me-1"></i>Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Content: Map and Vehicle List -->
+<div class="row">
+    <!-- Map -->
+    <div class="col-lg-8 mb-4">
         <div class="card">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
-                    <i class="fas fa-plug me-2"></i>Samsara Integration Status
+                    <i class="fas fa-map me-2"></i>Live Fleet Map
                 </h5>
-                <div>
-                    <span class="badge bg-success me-2"><i class="fas fa-circle me-1"></i>Connected</span>
-                    <button class="btn btn-primary btn-sm" onclick="syncSamsara()">
-                        <i class="fas fa-sync me-1"></i>Sync Now
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary active" onclick="toggleGeofences(true)">
+                        <i class="fas fa-draw-polygon me-1"></i>Show Geofences
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="centerOnFleet()">
+                        <i class="fas fa-crosshairs me-1"></i>Center
                     </button>
                 </div>
             </div>
-            <div class="card-body">
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i>
-                    <strong>Automatic Tracking Enabled:</strong> Loads from trucks with Samsara devices are automatically tracked. Status updates are synchronized based on GPS location and predefined geofences.
-                </div>
-                
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6 class="mb-3">Integration Features</h6>
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <span><i class="fas fa-map-marker-alt text-primary me-2"></i>Real-time GPS Tracking</span>
-                                <span class="badge bg-success">Active</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <span><i class="fas fa-geofence text-primary me-2"></i>Automatic Geofence Detection</span>
-                                <span class="badge bg-success">Active</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <span><i class="fas fa-exchange-alt text-primary me-2"></i>Status Auto-Updates</span>
-                                <span class="badge bg-success">Active</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <span><i class="fas fa-clock text-primary me-2"></i>Arrival/Departure Times</span>
-                                <span class="badge bg-success">Active</span>
-                            </li>
-                        </ul>
-                    </div>
-                    <div class="col-md-6">
-                        <h6 class="mb-3">Configuration</h6>
-                        <form id="samaraConfig">
-                            <div class="mb-3">
-                                <label class="form-label">API Endpoint</label>
-                                <input type="text" class="form-control" value="https://api.samara.io/v1" readonly>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Sync Interval (minutes)</label>
-                                <select class="form-select">
-                                    <option value="1">1 minute</option>
-                                    <option value="5" selected>5 minutes</option>
-                                    <option value="10">10 minutes</option>
-                                    <option value="15">15 minutes</option>
-                                </select>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Geofence Radius (meters)</label>
-                                <input type="number" class="form-control" value="100" min="50" max="500">
-                            </div>
-                        </form>
+            <div class="card-body p-0">
+                <div id="fleetMap" style="height: 500px; width: 100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vehicle List -->
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Vehicle Status
+                </h5>
+            </div>
+            <div class="card-body p-0" style="max-height: 500px; overflow-y: auto;">
+                <div id="vehicleList">
+                    <div class="text-center py-4 text-muted">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-2"></i>
+                        <p>Loading vehicles...</p>
                     </div>
                 </div>
             </div>
@@ -128,146 +143,338 @@
     </div>
 </div>
 
-<!-- Tracked Loads -->
-<div class="row">
+<!-- API Endpoints Reference -->
+<div class="row mb-4">
     <div class="col-12">
         <div class="card">
             <div class="card-header bg-white">
                 <h5 class="mb-0">
-                    <i class="fas fa-truck-moving me-2"></i>Currently Tracked Loads
+                    <i class="fas fa-code me-2"></i>API Endpoints (Samsara Compatible)
                 </h5>
             </div>
             <div class="card-body">
-                {% if loads %}
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Load #</th>
-                                <th>Driver</th>
-                                <th>Truck</th>
-                                <th>Samsara Device</th>
-                                <th>Job</th>
-                                <th>Status</th>
-                                <th>Last Update</th>
-                                <th>Location</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for load in loads %}
-                            <tr>
-                                <td><strong>{{ load.load_number }}</strong></td>
-                                <td>{{ load.driver_name }}</td>
-                                <td><span class="badge bg-secondary">{{ load.truck_number }}</span></td>
-                                <td>
-                                    {% if load.samara_device_id %}
-                                    <span class="badge bg-success">
-                                        <i class="fas fa-microchip me-1"></i>{{ load.samara_device_id }}
-                                    </span>
-                                    {% else %}
-                                    <span class="text-muted">No device</span>
-                                    {% endif %}
-                                </td>
-                                <td>{{ load.job_name }}</td>
-                                <td>
-                                    {% set status_classes = {
-                                        'assigned': 'bg-secondary',
-                                        'en_route': 'bg-primary',
-                                        'at_job': 'bg-info',
-                                        'delivering': 'bg-warning',
-                                        'complete': 'bg-success'
-                                    } %}
-                                    <span class="badge {{ status_classes.get(load.status, 'bg-secondary') }}">
-                                        {{ load.status.replace('_', ' ').title() }}
-                                    </span>
-                                </td>
-                                <td>
-                                    <span class="text-muted small">
-                                        {% if load.updated_at %}{{ load.updated_at }}{% else %}Never{% endif %}
-                                    </span>
-                                </td>
-                                <td>
-                                    {% if load.samara_device_id %}
-                                    <button class="btn btn-sm btn-outline-primary" onclick="viewLocation('{{ load.samara_device_id }}')">
-                                        <i class="fas fa-map-marker-alt me-1"></i>View
-                                    </button>
-                                    {% else %}
-                                    <span class="text-muted">N/A</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <div class="text-center text-muted py-4">
-                    <i class="fas fa-satellite-dish fa-3x mb-3"></i>
-                    <p>No loads with Samsara tracking enabled</p>
-                    <a href="{{ url_for('trucks') }}" class="btn btn-primary btn-sm">
-                        <i class="fas fa-plus me-1"></i>Add Samsara Devices to Trucks
-                    </a>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Location Modal -->
-<div class="modal fade" id="locationModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">GPS Location</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="mapContainer" style="height: 400px; background: #f0f0f0; display: flex; align-items: center; justify-content: center;">
-                    <div class="text-center text-muted">
-                        <i class="fas fa-map-marked-alt fa-3x mb-3"></i>
-                        <p>Map integration would display here</p>
-                        <small>Latitude: <span id="latitude">-</span></small><br>
-                        <small>Longitude: <span id="longitude">-</span></small>
+                <p class="text-muted mb-3">These endpoints mirror the official Samsara API structure. Ready for JONEL Flex API integration.</p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Fleet Endpoints</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><code>GET</code></td>
+                                    <td><a href="/api/samsara/fleet/vehicles" target="_blank">/api/samsara/fleet/vehicles</a></td>
+                                    <td><small class="text-muted">List all vehicles</small></td>
+                                </tr>
+                                <tr>
+                                    <td><code>GET</code></td>
+                                    <td><a href="/api/samsara/fleet/vehicles/locations" target="_blank">/api/samsara/fleet/vehicles/locations</a></td>
+                                    <td><small class="text-muted">Real-time GPS</small></td>
+                                </tr>
+                                <tr>
+                                    <td><code>GET</code></td>
+                                    <td><a href="/api/samsara/fleet/vehicles/stats" target="_blank">/api/samsara/fleet/vehicles/stats</a></td>
+                                    <td><small class="text-muted">Vehicle stats</small></td>
+                                </tr>
+                                <tr>
+                                    <td><code>GET</code></td>
+                                    <td><a href="/api/samsara/fleet/drivers" target="_blank">/api/samsara/fleet/drivers</a></td>
+                                    <td><small class="text-muted">List drivers</small></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Assets & Geofences</h6>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><code>GET</code></td>
+                                    <td><a href="/api/samsara/assets" target="_blank">/api/samsara/assets</a></td>
+                                    <td><small class="text-muted">List all assets</small></td>
+                                </tr>
+                                <tr>
+                                    <td><code>GET</code></td>
+                                    <td><a href="/api/samsara/addresses" target="_blank">/api/samsara/addresses</a></td>
+                                    <td><small class="text-muted">Geofences</small></td>
+                                </tr>
+                                <tr>
+                                    <td><code>GET</code></td>
+                                    <td><a href="/api/samsara/webhooks" target="_blank">/api/samsara/webhooks</a></td>
+                                    <td><small class="text-muted">Webhooks config</small></td>
+                                </tr>
+                                <tr class="table-warning">
+                                    <td><code>GET</code></td>
+                                    <td><a href="/api/samsara/jonel/vehicles" target="_blank">/api/samsara/jonel/vehicles</a></td>
+                                    <td><small class="text-muted"><strong>JONEL Format</strong></small></td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- JONEL Integration Info -->
+<div class="row">
+    <div class="col-12">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-plug me-2"></i>JONEL Access Unlimited Integration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-check-circle text-success me-2"></i>Integration Ready</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-arrow-right text-primary me-2"></i>Samsara API format compatible</li>
+                            <li><i class="fas fa-arrow-right text-primary me-2"></i>JONEL Flex API transformer included</li>
+                            <li><i class="fas fa-arrow-right text-primary me-2"></i>Webhook support for real-time events</li>
+                            <li><i class="fas fa-arrow-right text-primary me-2"></i>Geofence entry/exit detection</li>
+                            <li><i class="fas fa-arrow-right text-primary me-2"></i>Automatic load status updates</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-cog text-primary me-2"></i>To Enable Live Data</h6>
+                        <ol>
+                            <li>Obtain Samsara API key from your fleet account</li>
+                            <li>Set <code>SAMSARA_API_KEY</code> environment variable</li>
+                            <li>Configure webhook URL in Samsara dashboard</li>
+                            <li>Map vehicle IDs to dispatch truck records</li>
+                        </ol>
+                        <div class="alert alert-warning mt-3 mb-0">
+                            <small><i class="fas fa-lock me-1"></i>API key required from CIO/IT department</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
-let updateCount = 0;
+// Initialize map centered on Atlanta metro
+const map = L.map('fleetMap').setView([33.88, -84.45], 10);
 
-function syncSamsara() {
-    // Simulate Samsara sync
-    const btn = event.target;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Syncing...';
-    
-    setTimeout(() => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-sync me-1"></i>Sync Now';
-        updateCount += Math.floor(Math.random() * 5) + 1;
-        document.getElementById('updateCount').textContent = updateCount;
-        alert('Samsara sync completed! ' + updateCount + ' status updates received.');
-    }, 2000);
+// Add OpenStreetMap tiles
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+// Store markers and geofences
+let vehicleMarkers = {};
+let geofenceCircles = [];
+let showGeofences = true;
+
+// Custom truck icon
+const truckIcon = L.divIcon({
+    className: 'truck-marker',
+    html: '<div style="background: #0d6efd; color: white; padding: 5px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"><i class="fas fa-truck"></i></div>',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+});
+
+const truckIconMoving = L.divIcon({
+    className: 'truck-marker-moving',
+    html: '<div style="background: #198754; color: white; padding: 5px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"><i class="fas fa-truck-moving"></i></div>',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+});
+
+const truckIconIdle = L.divIcon({
+    className: 'truck-marker-idle',
+    html: '<div style="background: #6c757d; color: white; padding: 5px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"><i class="fas fa-truck"></i></div>',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+});
+
+// Fetch and display geofences
+async function loadGeofences() {
+    try {
+        const response = await fetch('/api/samsara/addresses');
+        const data = await response.json();
+
+        document.getElementById('geofenceCount').textContent = data.data.length;
+
+        // Clear existing geofences
+        geofenceCircles.forEach(circle => map.removeLayer(circle));
+        geofenceCircles = [];
+
+        if (showGeofences) {
+            data.data.forEach(addr => {
+                if (addr.geofence && addr.geofence.circle) {
+                    const geo = addr.geofence.circle;
+                    const isPlant = addr.name.includes('SRM') || addr.name.includes('Plant');
+                    const color = isPlant ? '#0d6efd' : '#ffc107';
+
+                    const circle = L.circle([geo.latitude, geo.longitude], {
+                        radius: geo.radiusMeters,
+                        color: color,
+                        fillColor: color,
+                        fillOpacity: 0.1,
+                        weight: 2
+                    }).addTo(map);
+
+                    circle.bindPopup(`<strong>${addr.name}</strong><br>Radius: ${geo.radiusMeters}m`);
+                    geofenceCircles.push(circle);
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error loading geofences:', error);
+    }
 }
 
-function viewLocation(deviceId) {
-    // Simulate location data
-    document.getElementById('latitude').textContent = (33.8 + Math.random() * 0.1).toFixed(6);
-    document.getElementById('longitude').textContent = (-84.3 + Math.random() * 0.1).toFixed(6);
-    $('#locationModal').modal('show');
+// Fetch and display vehicle locations
+async function loadVehicleLocations() {
+    try {
+        const response = await fetch('/api/samsara/fleet/vehicles/locations');
+        const data = await response.json();
+
+        let vehiclesOnline = 0;
+        let enginesOn = 0;
+        let vehicleListHtml = '';
+
+        data.data.forEach(vehicle => {
+            vehiclesOnline++;
+            const loc = vehicle.location;
+            const isMoving = loc.speed > 5;
+            const engineOn = vehicle.engineState && vehicle.engineState.value === 'On';
+
+            if (engineOn) enginesOn++;
+
+            // Update or create marker
+            const icon = isMoving ? truckIconMoving : (engineOn ? truckIcon : truckIconIdle);
+
+            if (vehicleMarkers[vehicle.id]) {
+                vehicleMarkers[vehicle.id].setLatLng([loc.latitude, loc.longitude]);
+                vehicleMarkers[vehicle.id].setIcon(icon);
+            } else {
+                vehicleMarkers[vehicle.id] = L.marker([loc.latitude, loc.longitude], { icon: icon })
+                    .addTo(map)
+                    .bindPopup(`
+                        <strong>${vehicle.name}</strong><br>
+                        Speed: ${loc.speed.toFixed(1)} mph<br>
+                        Heading: ${loc.heading}°<br>
+                        Engine: ${vehicle.engineState ? vehicle.engineState.value : 'Unknown'}<br>
+                        <small>${loc.reverseGeo.formattedLocation}</small>
+                    `);
+            }
+
+            // Update popup content
+            vehicleMarkers[vehicle.id].setPopupContent(`
+                <strong>${vehicle.name}</strong><br>
+                Speed: ${loc.speed.toFixed(1)} mph<br>
+                Heading: ${loc.heading}°<br>
+                Engine: ${vehicle.engineState ? vehicle.engineState.value : 'Unknown'}<br>
+                <small>${loc.reverseGeo.formattedLocation}</small>
+            `);
+
+            // Build vehicle list HTML
+            const statusClass = isMoving ? 'success' : (engineOn ? 'primary' : 'secondary');
+            const statusText = isMoving ? 'Moving' : (engineOn ? 'Idle' : 'Off');
+
+            vehicleListHtml += `
+                <div class="list-group-item list-group-item-action" onclick="focusVehicle('${vehicle.id}', ${loc.latitude}, ${loc.longitude})">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong><i class="fas fa-truck me-2 text-${statusClass}"></i>${vehicle.name}</strong>
+                            <br>
+                            <small class="text-muted">${loc.reverseGeo.formattedLocation}</small>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-${statusClass}">${statusText}</span>
+                            <br>
+                            <small>${loc.speed.toFixed(0)} mph</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        // Update stats
+        document.getElementById('vehiclesOnline').textContent = vehiclesOnline;
+        document.getElementById('enginesOn').textContent = enginesOn;
+        document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+        document.getElementById('vehicleList').innerHTML = vehicleListHtml || '<div class="text-center py-4 text-muted">No vehicles found</div>';
+
+    } catch (error) {
+        console.error('Error loading vehicle locations:', error);
+        document.getElementById('apiStatus').className = 'badge bg-danger';
+        document.getElementById('apiStatus').innerHTML = '<i class="fas fa-times-circle me-1"></i>API Error';
+    }
 }
 
-// Auto-sync every 5 minutes
-setInterval(() => {
-    console.log('Auto-syncing with Samsara...');
-    updateCount += Math.floor(Math.random() * 3);
-    document.getElementById('updateCount').textContent = updateCount;
-}, 300000);
+// Focus map on specific vehicle
+function focusVehicle(id, lat, lon) {
+    map.setView([lat, lon], 14);
+    if (vehicleMarkers[id]) {
+        vehicleMarkers[id].openPopup();
+    }
+}
+
+// Center map on all vehicles
+function centerOnFleet() {
+    const markers = Object.values(vehicleMarkers);
+    if (markers.length > 0) {
+        const group = L.featureGroup(markers);
+        map.fitBounds(group.getBounds().pad(0.1));
+    }
+}
+
+// Toggle geofence visibility
+function toggleGeofences(show) {
+    showGeofences = show;
+    loadGeofences();
+}
+
+// Refresh all data
+function refreshData() {
+    loadVehicleLocations();
+    loadGeofences();
+}
+
+// Check API health
+async function checkApiHealth() {
+    try {
+        const response = await fetch('/api/samsara/health');
+        const data = await response.json();
+
+        if (data.status === 'healthy') {
+            document.getElementById('apiStatus').className = 'badge bg-success me-2';
+            document.getElementById('apiStatus').innerHTML = `<i class="fas fa-check-circle me-1"></i>API Connected (${data.mode})`;
+        }
+    } catch (error) {
+        document.getElementById('apiStatus').className = 'badge bg-danger me-2';
+        document.getElementById('apiStatus').innerHTML = '<i class="fas fa-times-circle me-1"></i>API Error';
+    }
+}
+
+// Initial load
+checkApiHealth();
+loadGeofences();
+loadVehicleLocations();
+
+// Auto-refresh every 10 seconds
+setInterval(loadVehicleLocations, 10000);
 </script>
+
+<style>
+.list-group-item:hover {
+    background-color: #f8f9fa;
+    cursor: pointer;
+}
+.truck-marker, .truck-marker-moving, .truck-marker-idle {
+    background: transparent !important;
+    border: none !important;
+}
+</style>
 {% endblock %}

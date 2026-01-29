@@ -29,8 +29,14 @@ from ai_knowledge import (
     ProductivityCalculator, RouteKnowledge, OperatingConstraints
 )
 
+# Import Mock Samsara API for GPS Integration Demo
+from samsara_mock import MockSamsaraAPI, create_mock_api, format_for_jonel
+
 # Initialize global AI engine
 ai_engine = AIDispatchEngine()
+
+# Initialize Mock Samsara API (will use DB connection when available)
+samsara_api = None  # Initialized after DB is ready
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
@@ -52,7 +58,7 @@ def add_security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     # CSP - allow same origin and inline scripts (needed for templates)
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; font-src 'self' fonts.gstatic.com cdn.jsdelivr.net; img-src 'self' data:;"
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net unpkg.com; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com unpkg.com; font-src 'self' fonts.gstatic.com cdn.jsdelivr.net; img-src 'self' data: *.tile.openstreetmap.org unpkg.com;"
     return response
 
 def get_db():
@@ -1218,7 +1224,195 @@ CURRENT OPERATIONS CONTEXT:
 @app.route('/samsara/integration')
 def samsara_integration():
     """Samsara GPS integration page"""
-    return render_template('samsara.html')
+    # Get active loads with truck info for tracking display
+    loads = query_db('''
+        SELECT la.*, d.name as driver_name, t.truck_number, t.samara_device_id,
+               j.job_name, p.name as plant_name
+        FROM loads_active la
+        JOIN drivers d ON la.driver_id = d.id
+        JOIN trucks t ON la.truck_id = t.id
+        LEFT JOIN jobs j ON la.job_id = j.id
+        LEFT JOIN plants p ON la.plant_id = p.id
+        ORDER BY la.created_at DESC
+    ''')
+    return render_template('samsara.html', loads=loads)
+
+
+# ============ SAMSARA GPS API (Mock for Demo) ============
+
+def get_samsara_api():
+    """Get or create Samsara API instance with DB connection"""
+    global samsara_api
+    if samsara_api is None:
+        db = get_db()
+        samsara_api = create_mock_api(db)
+    return samsara_api
+
+
+@app.route('/api/samsara/health')
+def samsara_health():
+    """Check Samsara API health status"""
+    api = get_samsara_api()
+    return jsonify(api.health_check())
+
+
+@app.route('/api/samsara/info')
+def samsara_info():
+    """Get Samsara API info and available endpoints"""
+    api = get_samsara_api()
+    return jsonify(api.get_api_info())
+
+
+@app.route('/api/samsara/assets')
+def samsara_assets():
+    """
+    List all assets (vehicles, trailers, equipment)
+    Mirrors: GET https://api.samsara.com/assets
+    """
+    api = get_samsara_api()
+    result = api.list_assets(
+        type=request.args.get('type'),
+        after=request.args.get('after'),
+        include_external_ids=request.args.get('includeExternalIds', '').lower() == 'true',
+        include_tags=request.args.get('includeTags', '').lower() == 'true',
+        tag_ids=request.args.get('tagIds', '').split(',') if request.args.get('tagIds') else None,
+        ids=request.args.get('ids', '').split(',') if request.args.get('ids') else None
+    )
+    return jsonify(result)
+
+
+@app.route('/api/samsara/fleet/vehicles')
+def samsara_vehicles():
+    """
+    List all vehicles in the fleet
+    Mirrors: GET https://api.samsara.com/fleet/vehicles
+    """
+    api = get_samsara_api()
+    result = api.list_vehicles(
+        after=request.args.get('after'),
+        include_external_ids=request.args.get('includeExternalIds', '').lower() == 'true',
+        include_tags=request.args.get('includeTags', '').lower() == 'true'
+    )
+    return jsonify(result)
+
+
+@app.route('/api/samsara/fleet/vehicles/<vehicle_id>')
+def samsara_vehicle(vehicle_id):
+    """
+    Get specific vehicle details
+    Mirrors: GET https://api.samsara.com/fleet/vehicles/{id}
+    """
+    api = get_samsara_api()
+    result = api.get_vehicle(vehicle_id)
+    return jsonify(result)
+
+
+@app.route('/api/samsara/fleet/vehicles/locations')
+def samsara_vehicle_locations():
+    """
+    Get real-time GPS locations for all vehicles
+    Mirrors: GET https://api.samsara.com/fleet/vehicles/locations
+
+    This is the primary endpoint for fleet tracking integration.
+    """
+    api = get_samsara_api()
+    result = api.get_vehicle_locations(
+        after=request.args.get('after'),
+        vehicle_ids=request.args.get('vehicleIds', '').split(',') if request.args.get('vehicleIds') else None
+    )
+    return jsonify(result)
+
+
+@app.route('/api/samsara/fleet/vehicles/<vehicle_id>/locations')
+def samsara_vehicle_location(vehicle_id):
+    """
+    Get real-time GPS location for a specific vehicle
+    Mirrors: GET https://api.samsara.com/fleet/vehicles/{id}/locations
+    """
+    api = get_samsara_api()
+    result = api.get_vehicle_location(vehicle_id)
+    return jsonify(result)
+
+
+@app.route('/api/samsara/fleet/vehicles/stats')
+def samsara_vehicle_stats():
+    """
+    Get vehicle stats (fuel, odometer, engine hours)
+    Mirrors: GET https://api.samsara.com/fleet/vehicles/stats
+    """
+    api = get_samsara_api()
+    types = request.args.get('types', 'engineStates,fuelPercents,obdOdometerMeters').split(',')
+    result = api.get_vehicle_stats(
+        types=types,
+        after=request.args.get('after'),
+        vehicle_ids=request.args.get('vehicleIds', '').split(',') if request.args.get('vehicleIds') else None
+    )
+    return jsonify(result)
+
+
+@app.route('/api/samsara/fleet/drivers')
+def samsara_drivers():
+    """
+    List all drivers
+    Mirrors: GET https://api.samsara.com/fleet/drivers
+    """
+    api = get_samsara_api()
+    result = api.list_drivers(
+        after=request.args.get('after'),
+        include_external_ids=request.args.get('includeExternalIds', '').lower() == 'true'
+    )
+    return jsonify(result)
+
+
+@app.route('/api/samsara/addresses')
+def samsara_addresses():
+    """
+    List all geofences/addresses
+    Mirrors: GET https://api.samsara.com/addresses
+    """
+    api = get_samsara_api()
+    result = api.list_addresses(after=request.args.get('after'))
+    return jsonify(result)
+
+
+@app.route('/api/samsara/fleet/vehicles/locations/history')
+def samsara_location_history():
+    """
+    Get historical GPS locations
+    Mirrors: GET https://api.samsara.com/fleet/vehicles/locations/history
+    """
+    api = get_samsara_api()
+    result = api.get_vehicle_locations_history(
+        start_time=request.args.get('startTime', ''),
+        end_time=request.args.get('endTime', ''),
+        vehicle_ids=request.args.get('vehicleIds', '').split(',') if request.args.get('vehicleIds') else None,
+        after=request.args.get('after')
+    )
+    return jsonify(result)
+
+
+@app.route('/api/samsara/webhooks')
+def samsara_webhooks():
+    """
+    List configured webhooks (for JONEL integration)
+    Mirrors: GET https://api.samsara.com/webhooks
+    """
+    api = get_samsara_api()
+    result = api.list_webhooks()
+    return jsonify(result)
+
+
+@app.route('/api/samsara/jonel/vehicles')
+def samsara_jonel_vehicles():
+    """
+    Get vehicle locations in JONEL Flex API format.
+    This endpoint transforms Samsara data for JONEL Access Unlimited integration.
+    """
+    api = get_samsara_api()
+    samsara_result = api.get_vehicle_locations()
+    jonel_result = format_for_jonel(samsara_result)
+    return jsonify(jonel_result)
+
 
 # ============ DRIVER-TRUCK AUTO-ASSIGNMENT ============
 
@@ -1841,8 +2035,6 @@ def apply_ai_recommendation():
     ''', (load_number, driver_id, truck_id,
           order['job_id'], plant_id or order['plant_id'], order['pickup_location_id'],
           order['material_id'], load_quantity, order['notes']), commit=True)
-          order.get('job_id'), plant_id or order.get('plant_id'), order.get('pickup_location_id'),
-          order.get('material_id'), order.get('quantity_tons', 25), order.get('notes', '')), commit=True)
 
     # Calculate new total assigned after this load
     new_total_assigned = already_assigned + load_quantity
